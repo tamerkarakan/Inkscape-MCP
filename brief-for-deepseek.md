@@ -6,6 +6,23 @@
 
 ---
 
+## ⚠️ ÖNCE BUNU OKU — okuyacağın (ve okumayacağın) dosyalar
+
+Kafan karışmasın diye **yalnızca şu 4 kaynağı oku:**
+1. **`brief-for-deepseek.md`** — bu dosya (yönlendirme).
+2. **`architecture-v1.md`** — BAĞLAYICI KONTRAT (asıl spec: 17 gerçek + 15 karar).
+3. **`reference/`** (tamamı) — yer-gerçeği: action envanteri (`core-actions.txt`, `action-list-full.txt`) + golden fixture'lar (`fixtures/`).
+4. **`review-rubric.md`** — nasıl review edileceğin (47 kontrol). Bunu bilerek yaz; "teaching to the test" değil, doğru mühendislik.
+
+**ŞUNLARI OKUMA** (tarihsel diyalog/provenance — eski/yanlış varsayımlar ve tartışma içerir, kafa karıştırır):
+- `README.md` ← senin ilk vizyonun; **`tool-rect` hatası burada**, tekrar okuma.
+- `codex-readme.md`, `claude-readme.md`
+- `claudan-codexe-eleştiri*.md`, `codexten-clauda-eleştri.md`, `codexten-claude-eleştiri-2.md` (Claude↔Codex tartışması)
+
+> Tek geçerli kaynak **`architecture-v1.md`**'dir. Herhangi bir çelişkide **kontrat kazanır.**
+
+---
+
 ## 0. Durum (kısa hikâye, çünkü bağlam önemli)
 
 Senin yazdığın ilk `README.md`, harika bir vizyondu **ama mimari çekirdeği yanlış bir varsayıma
@@ -98,7 +115,9 @@ Kodun şuna göre puanlanacak (bunları baştan karşıla):
 
 ## 6. Teslim formatı
 
-- Kod bir **git branch / PR** olarak gelsin (review diff üzerinden çalışır).
+- **Önce dal aç:** `git checkout -b feat/v1-prototype` (baseline commit `fbb45f9` üzerinde). Default dala doğrudan commit YAPMA.
+- **Tasarım dosyalarına ve `reference/`'a DOKUNMA.** Kodu yalnızca **yeni dizinlere** yaz: `src/inkscape_mcp/` + `tests/`. (Mevcut `.md` dosyaları değiştirilirse review diff'i kirlenir.)
+- İşin bitince **branch/PR** olarak teslim et; review `git diff fbb45f9..feat/v1-prototype` üzerinde koşar.
 - PR açıklamasında **kısa bir uygunluk tablosu**: "Madde N → şu dosya/fonksiyon → şu test."
 - Çalışan E2E + `pytest` yeşil; Inkscape yolu env ile (`INKSCAPE_PATH`).
 - `reference/`'ı **kaynak** olarak kullan; fixture'ları golden test beklentisi yap.
