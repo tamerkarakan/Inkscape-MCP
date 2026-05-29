@@ -1,0 +1,252 @@
+about               :  Inkscape version, authors, license
+action-list         :  Print a list of actions and exit
+active-window-end   :  End execution in active window
+active-window-start :  Start execution in active window
+clone               :  Create a clone (a copy linked to the original) of selected object
+clone-link          :  Relink the selected clones to the object currently on the clipboard
+clone-link-lpe      :  Creates a new path, applies the Clone original LPE, and refers it to the selected path
+clone-unlink        :  Cut the selected clones' links to the originals, turning them into standalone objects
+clone-unlink-recursively:  Unlink all clones in the selection, even if they are in groups.
+com.kaioa.lorem-ipsum:  Lorem Ipsum
+com.kaioa.lorem-ipsum.noprefs:  Lorem Ipsum
+com.vaxxine.print.print-win32-vector:  Win32 Vector Print
+com.vaxxine.print.print-win32-vector.noprefs:  Win32 Vector Print
+convert-dpi-method  :  Set DPI conversion method for legacy Inkscape files
+copy                :  Copy selection to clipboard
+cut                 :  Cut selection to clipboard
+debug-info          :  Print debugging information and exit
+delete              :  Delete selected items, nodes or text.
+delete-selection    :  Delete selected items
+duplicate           :  Duplicate Selected Objects
+duplicate-transform :  Duplicate selected objects and reapply last transformation
+edit-remove-filter  :  Remove any filters from selected objects
+effect.color-markers:  Color Markers
+effect.color-markers.noprefs:  Color Markers
+effect.distribute-along-path:  Distribute Along Path
+effect.distribute-along-path.noprefs:  Distribute Along Path
+effect.draw-from-triangle:  Construct from Triangle
+effect.draw-from-triangle.noprefs:  Construct from Triangle
+effect.extrude      :  Extrude Between Two Paths
+effect.extrude.noprefs:  Extrude Between Two Paths
+effect.interpolate  :  Interpolate Between Paths
+effect.interpolate.noprefs:  Interpolate Between Paths
+effect.long-shadow  :  Long Shadow
+effect.long-shadow.noprefs:  Long Shadow
+effect.merge-styles :  Merge Styles into CSS
+effect.merge-styles.noprefs:  Merge Styles into CSS
+effect.pattern-along-path:  Pattern along Path
+effect.pattern-along-path.noprefs:  Pattern along Path
+effect.voronoi      :  Voronoi Diagram
+effect.voronoi-fill :  Voronoi Pattern Fill
+effect.voronoi-fill.noprefs:  Voronoi Pattern Fill
+effect.voronoi.noprefs:  Voronoi Diagram
+element-a-open-link :  Add an anchor to an object.
+element-image-crop  :  Remove parts of the image outside the applied clipping area.
+element-image-edit  :  Edit image externally (image must be selected and not embedded).
+export-area         :  Set export area
+export-area-drawing :  Export drawing area
+export-area-page    :  Export page area
+export-area-snap    :  Snap export area to integer values
+export-background   :  Include background color in exported file
+export-background-opacity:  Include background opacity in exported file
+export-do           :  Do export
+export-dpi          :  Set export DPI
+export-filename     :  Set export file name
+export-height       :  Set export height
+export-id           :  Export selected ID(s)
+export-id-only      :  Hide any objects not given in export-id option
+export-ignore-filters:  Export without filters to avoid rasterization for PDF, PS, EPS
+export-latex        :  Export LaTeX
+export-margin       :  Set additional export margin
+export-overwrite    :  Allow to overwrite existing files during export
+export-pdf-version  :  Set PDF version
+export-plain-svg    :  Export as plain SVG
+export-png-antialias:  Set antialiasing level for PNG export
+export-png-color-mode:  Set color mode for PNG export
+export-png-compression:  Set compression level for PNG export
+export-png-use-dithering:  Set dithering for PNG export
+export-ps-level     :  Set PostScript level
+export-text-to-path :  Convert texts to paths in the exported file
+export-type         :  Set export file type
+export-use-hints    :  Export using saved hints
+export-width        :  Set export width
+file-close          :  Close active document
+file-new            :  Open new document using template
+file-open           :  Open file
+file-open-window    :  Open file window
+file-rebase         :  Replace current document's contents by contents of another file
+fit-canvas-to-selection:  Fit the page to the current selection
+frame               :  Frame
+frame.noprefs       :  Frame
+inkscape-version    :  Print Inkscape version and exit
+jessyink.core.video :  Video
+jessyink.core.video.noprefs:  Video
+jessyink.install    :  Install/update
+jessyink.install.noprefs:  Install/update
+jessyink.summary    :  Summary
+jessyink.summary.noprefs:  Summary
+jessyink.transitions:  Transitions
+jessyink.transitions.noprefs:  Transitions
+jessyink.uninstall  :  Uninstall/remove
+jessyink.uninstall.noprefs:  Uninstall/remove
+jessyink.view       :  View
+jessyink.view.noprefs:  View
+last-effect         :  Repeat the last extension with the same settings
+last-effect-pref    :  Repeat the last extension with new settings
+list-input-types    :  Print a list of input file extensions and exit
+math.triangle       :  Triangle
+math.triangle.noprefs:  Triangle
+mcepl.ungroup-deep  :  Deep Ungroup
+mcepl.ungroup-deep.noprefs:  Deep Ungroup
+no-convert-baseline :  Do not convert text baselines in legacy Inkscape files
+object-add-corners-lpe:  Add Corners Live Path Effect to path
+object-align        :  Align selected objects; usage: [[left|hcenter|right] || [top|vcenter|bottom]] [last|first|biggest|smallest|page|drawing|selection|pref]? group? anchor?
+object-align-on-canvas:  Enable on-canvas alignment handles
+object-align-text   :  Align selected text anchors; usage: [[vertical | horizontal] [last|first|biggest|smallest|page|drawing|selection]?
+object-distribute   :  Distribute selected objects; usage: [hgap | left | hcenter | right | vgap | top | vcenter | bottom]
+object-distribute-text:  Distribute text anchors; usage [vertical | horizontal]
+object-flip-horizontal:  Flip selected objects horizontally
+object-flip-vertical:  Flip selected objects vertically
+object-rearrange    :  Rearrange selected objects; usage: [graph | exchange | exchangez | rotate | randomize | unclump]
+object-release-clip :  Remove clipping path from selection
+object-release-mask :  Remove mask from selection
+object-remove-overlaps:  Remove overlaps between objects: requires two comma separated numbers (horizontal and vertical gaps)
+object-rotate-90-ccw:  Rotate selection 90� counter-clockwise
+object-rotate-90-cw :  Rotate selection 90� clockwise
+object-set-attribute:  Set or update an attribute of selected objects; usage: object-set-attribute:attribute name, attribute value;
+object-set-clip     :  Apply clipping path to selection (using the topmost object as clipping path)
+object-set-clip-group:  Create a self-clipping group to which objects (not contributing to the clip-path) can be added
+object-set-inverse-clip:  Apply inverse clipping path to selection (Power Clip LPE)
+object-set-inverse-mask:  Apply inverse mask to selection (Power Mask LPE)
+object-set-mask     :  Apply mask to selection (using the topmost object as mask)
+object-set-property :  Set or update a property on selected objects; usage: object-set-property:property name, property value;
+object-stroke-to-path:  Convert strokes to paths
+object-to-guides    :  Convert selected objects to a collection of guidelines aligned with their edges
+object-to-marker    :  Convert selection to a line marker
+object-to-path      :  Convert shapes to paths
+object-to-pattern   :  Convert selection to a rectangle with tiled pattern fill
+object-trace        :  
+object-unlink-clones:  Unlink clones and symbols
+open-page           :  Select PDF page number to import
+page-fit-to-selection:  Fit the page to the current selection or the drawing if there is no selection
+page-rotate         :  Rotate page by 90-degree rotation steps
+paste-height        :  Scale selection vertically to match the height of the copied object
+paste-height-separately:  Scale each selected object vertically to match the height of the copied object
+paste-path-effect   :  Apply the path effect of the copied object to selection
+paste-size          :  Scale selection to match the size of the copied object
+paste-size-separately:  Scale each selected object to match the size of the copied object
+paste-style         :  Apply the style of the copied object to selection
+paste-width         :  Scale selection horizontally to match the width of the copied object
+paste-width-separately:  Scale each selected object horizontally to match the width of the copied object
+path-break-apart    :  Break selected paths into subpaths
+path-combine        :  Combine several paths into one
+path-cut            :  Cut the bottom path's stroke into pieces, removing fill
+path-difference     :  Create difference of selected paths (bottom minus top)
+path-division       :  Cut the bottom path into pieces
+path-exclusion      :  Create exclusive OR of selected paths (those parts that belong to only one path)
+path-fill-between-paths:  Create a fill object using the selected paths
+path-flatten        :  Flatten one or more overlapping objects into their visible parts
+path-fracture       :  Fracture one or more overlapping objects into all possible segments
+path-intersection   :  Create intersection of selected paths
+path-simplify       :  Simplify selected paths (remove extra nodes)
+path-split          :  Split selected paths into non-overlapping sections
+path-union          :  Create union of selected paths
+pattern-to-object   :  Extract objects from a tiled pattern fill
+query-all           :  Query 'x', 'y', 'width', and 'height'
+query-height        :  Query 'height' value(s) of object(s)
+query-width         :  Query 'width' value(s) of object(s)
+query-x             :  Query 'x' value(s) of selected objects
+query-y             :  Query 'y' value(s) of selected objects
+quit                :  Quit Inkscape, check for data loss
+quit-immediate      :  Immediately quit Inkscape, no check for data loss
+remove-path-effect  :  Remove any path effects from selected objects
+revision_f4327f4    :  
+ru.cnc-club.filter.gcodetools-about-no-options-no-preferences:  About
+ru.cnc-club.filter.gcodetools-about-no-options-no-preferences.noprefs:  About
+ru.cnc-club.filter.gcodetools-area-area-fill-area-artefacts-ptg:  Area
+ru.cnc-club.filter.gcodetools-area-area-fill-area-artefacts-ptg.noprefs:  Area
+ru.cnc-club.filter.gcodetools-dxfpoints-no-options:  DXF Points
+ru.cnc-club.filter.gcodetools-dxfpoints-no-options.noprefs:  DXF Points
+ru.cnc-club.filter.gcodetools-engraving:  Engraving
+ru.cnc-club.filter.gcodetools-engraving.noprefs:  Engraving
+ru.cnc-club.filter.gcodetools-graffiti-orientation:  Graffiti
+ru.cnc-club.filter.gcodetools-graffiti-orientation.noprefs:  Graffiti
+ru.cnc-club.filter.gcodetools-lathe-lathe-modify-path-ptg:  Lathe
+ru.cnc-club.filter.gcodetools-lathe-lathe-modify-path-ptg.noprefs:  Lathe
+ru.cnc-club.filter.gcodetools-orientation-no-options-no-preferences:  Orientation Points
+ru.cnc-club.filter.gcodetools-orientation-no-options-no-preferences.noprefs:  Orientation Points
+ru.cnc-club.filter.gcodetools-plasma-prepare-path-no-options-no-preferences:  Prepare Path for Plasma
+ru.cnc-club.filter.gcodetools-plasma-prepare-path-no-options-no-preferences.noprefs:  Prepare Path for Plasma
+ru.cnc-club.filter.gcodetools-ptg:  Path to Gcode
+ru.cnc-club.filter.gcodetools-ptg.noprefs:  Path to Gcode
+ru.cnc-club.filter.gcodetools-tools-library-no-options-no-preferences:  Tools Library
+ru.cnc-club.filter.gcodetools-tools-library-no-options-no-preferences.noprefs:  Tools Library
+se.lewerin.filter.dimension:  Dimensions
+se.lewerin.filter.dimension.noprefs:  Dimensions
+select              :  Select by ID (deprecated)
+select-all          :  Select all; options: 'all' (every object including groups), 'layers', 'no-layers' (top level objects in layers), 'groups' (all groups including layers), 'no-groups' (all objects other than groups and layers, default)
+select-by-class     :  Select by class
+select-by-element   :  Select by SVG element (e.g. 'rect')
+select-by-id        :  Select by ID
+select-by-selector  :  Select by CSS selector
+select-clear        :  Clear selection
+select-invert       :  
+select-list         :  Print a list of objects in current selection
+select-original     :  Select the object to which the selected clone is linked
+selection-bottom    :  Lower selection to bottom
+selection-empty-backup:  Empty stored backup of selection of objects or nodes
+selection-group     :  Group selected objects
+selection-hide      :  Hide all selected objects
+selection-link      :  Add an anchor to selected objects
+selection-lock      :  Lock all selected objects
+selection-lower     :  Lower selection one step
+selection-make-bitmap-copy:  Export selection to a bitmap and insert it into document
+selection-raise     :  Raise selection one step
+selection-restore-backup:  Restore backup of stored selection of objects or nodes
+selection-set-backup:  Set backup of current selection of objects or nodes
+selection-stack-down:  Move the selection down in the stack order
+selection-stack-up  :  Move the selection up in the stack order
+selection-top       :  Raise selection to top
+selection-ungroup   :  Ungroup selected objects
+selection-ungroup-pop:  Pop selected objects out of group
+selection-unhide    :  Unhide all selected objects
+selection-unhide-below:  Unhide all items inside selected objects
+selection-unlock    :  Unlock all selected objects
+selection-unlock-below:  Unlock all items inside selected objects
+swap-fill-and-stroke:  Swap fill and stroke of an object
+system-data-directory:  Print system data directory and exit
+text-convert-to-glyphs:  Convert text into individual glyphs
+text-convert-to-regular:  Convert flowed text to regular text object (preserves appearance)
+text-flow-into-frame:  Put text into a frame (path or shape), creating a flowed text linked to the frame object
+text-flow-subtract-frame:  Flow text around a frame (path or shape), only available for SVG 2.0 Flow text.
+text-put-on-path    :  Put text on path
+text-remove-from-path:  Remove text from path
+text-unflow         :  Remove text from frame (creates a single-line text object)
+text-unkern         :  Remove all manual kerns and glyph rotations from a text object
+transform-grow      :  Grow/shrink selected objects
+transform-grow-step :  Grow/shrink selected objects by multiple of step value
+transform-reapply   :  Reapply the last transformation to the selection
+transform-remove    :  Remove any transforms from selected objects
+transform-rotate    :  Rotate selected objects by degrees
+transform-rotate-step:  Rotate selected objects by multiple of step value
+transform-scale     :  Scale selected objects by scale factor
+transform-translate :  Translate selected objects (dx,dy)
+tutorial-advanced   :  Advanced Inkscape topics
+tutorial-basic      :  Getting started with Inkscape
+tutorial-calligraphy:  Using the Calligraphy pen tool
+tutorial-design     :  Principles of design in the tutorial form
+tutorial-interpolate:  Using the interpolate extension
+tutorial-shapes     :  Using shape tools to create and edit shapes
+tutorial-tips       :  Miscellaneous tips and tricks
+tutorial-tracing    :  Using bitmap tracing
+tutorial-tracing-pixelart:  Using Trace Pixel Art dialog
+unhide-all          :  Unhide all objects
+unlock-all          :  Unlock all objects
+unselect            :  Deselect by ID (deprecated)
+unselect-by-id      :  Deselect by ID
+user-data-directory :  Print user data directory and exit
+window-close        :  Close the active window, does not check for data loss
+window-crash        :  Force Inkscape to crash, useful for testing.
+window-open         :  Open a window for the active document; GUI only
+window-query-geometry:  Query the active window's location and size
+window-set-geometry :  Set the active window's location and size (x, y, width, height)

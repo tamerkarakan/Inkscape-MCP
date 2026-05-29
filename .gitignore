@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+build/
+dist/
+# Local Claude settings
+.claude/settings.local.json
+# OS
+Thumbs.db
+.DS_Store
+# Inkscape MCP runtime workspace
+/workspace/
+*.tmp
