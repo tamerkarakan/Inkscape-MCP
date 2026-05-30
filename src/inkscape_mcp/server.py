@@ -418,6 +418,58 @@ def create_server() -> FastMCP:
             }
         }
 
+    # ═══════════════════════════════════════════
+    #  Prompts (client-AI guidance)
+    # ═══════════════════════════════════════════
+
+    @mcp.prompt(
+        name="vectorize_image",
+        title="Vectorize Image (AI-First)",
+        description="Convert an uploaded image to clean, semantic SVG vectors using AI understanding, not trace-bitmap"
+    )
+    def vectorize_image(document_path: str = "", instructions: str = "") -> str:
+        """Guidance for the AI to vectorize an image by understanding its content."""
+        base = f"""
+You are vectorizing an image the user has already shown you (you can see it in the conversation context).
+
+{("The user gave specific instructions: " + instructions) if instructions else ""}
+
+Follow these steps in order:
+
+1. **ANALYZE the image semantically first.**
+   Identify each distinct object, shape, and text element. For each one, determine:
+   - What it IS (e.g. a circle, a letter, a logo, a rectangle, an arrow)
+   - Its color, fill, and stroke
+   - Its position (x,y) and size (width, height, radius)
+   - Understanding comes FIRST — do not blindly trace edges.
+
+2. **Set up the SVG document.**
+   {"The document_path provided is: " + document_path if document_path else "If document_path is empty, call `document_create()` first. Choose a view_box that preserves the image's aspect ratio (e.g., '0 0 width height')."}
+   Use the given `document_path` if non-empty; otherwise use the one you created.
+
+3. **RECONSTRUCT each element with primitive shapes.**
+   For each object you identified, call `element_create()` with:
+   - `element_type`: one of "rect", "circle", "path", or "text" — choose the CLOSEST semantic primitive.
+     * A circle or ellipse → "circle" (use cx, cy, r)
+     * A rectangle or rounded rect → "rect" (use x, y, width, height, rx, ry)
+     * A letter or word → "text" (use x, y, text, font_family, font_size, fill)
+     * Anything complex (logo curves, icons, arrows) → "path" (use d with clean path commands)
+   - `properties`: a dict with real coordinates, fills, strokes — match the original image closely.
+   - Build clean, intentional vectors, not messy traced points.
+
+4. **SELF-CHECK with `render_preview()` and `query_geometry()`.**
+   After creating all elements, generate a `render_preview()` to visually compare against the original image. Use `query_geometry()` to verify bounding boxes and positions. If something is off, call `element_update()` to adjust properties (pass the correct expected_revision). Iterate until the vector version matches the original image closely.
+
+5. **FALLBACK RULE — IMPORTANT:**
+   - **Never** use Inkscape's trace-bitmap as your primary vectorization method. It does not understand the image; it only follows color and contour edges.
+   - Only use trace-bitmap as a last resort for photographic regions, complex textures, or gradients that genuinely cannot be described as discrete shapes.
+   - Everywhere else, use the semantic AI reconstruction method (steps 1-4).
+
+6. **When in doubt, ASK the user.**
+   If you cannot determine the intended color, shape meaning, or layout of a part of the image, do not guess — ask the user for clarification before proceeding.
+"""
+        return base
+
     # ── Cold-start warm-up (background; non-blocking) ──
     async def _warmup_inkscape() -> None:
         """Pre-warm Inkscape binary to avoid >30s cold-start timeout."""
