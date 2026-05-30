@@ -75,6 +75,12 @@ def _parse_length(value: str) -> float:
     return num * unit_map[unit]
 
 
+# Structural / non-geometry tags excluded from id-map diffing: Inkscape's
+# --export round-trip re-creates these with fresh ids (svg1/namedview1),
+# which would otherwise pollute id_map.created/destroyed.
+_STRUCTURAL_TAGS = frozenset({"svg", "namedview", "defs", "metadata"})
+
+
 class SessionManager:
     """Manages per-document sessions with locking and revision tracking."""
 
@@ -213,11 +219,15 @@ class SessionManager:
             raise IdNotFoundError(object_id)
 
     def collect_ids(self, tree: etree._Element) -> set[str]:
-        """Collect all element IDs in a document."""
+        """Collect element IDs, excluding structural (svg/namedview/defs/metadata)."""
         ids: set[str] = set()
         for el in tree.iter():
             id_attr = el.get("id")
             if id_attr:
+                if isinstance(el.tag, str):
+                    local_tag = el.tag.rsplit("}", 1)[-1]
+                    if local_tag in _STRUCTURAL_TAGS:
+                        continue
                 ids.add(id_attr)
         return ids
 
