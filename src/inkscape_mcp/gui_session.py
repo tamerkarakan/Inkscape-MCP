@@ -152,6 +152,16 @@ class GuiSessionManager:
                 self._sessions[app_id] = session
             return self._sessions[app_id]
 
+    async def close(self, app_id: str) -> bool:
+        """Tek bir oturumu kapat. Oturum vardıysa True döner."""
+        async with self._get_lock(app_id):
+            session = self._sessions.pop(app_id, None)
+            if session is None:
+                return False
+            if session._proc is not None:
+                await session.close()
+            return True
+
     async def close_all(self):
         for session in list(self._sessions.values()):
             if session._proc is not None:

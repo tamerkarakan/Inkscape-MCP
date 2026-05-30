@@ -189,3 +189,46 @@ class RunActionsResult(TypedDict):
     content: list[TextContent]
     structuredContent: RunActionsStructured
     isError: NotRequired[bool]
+
+
+# ── gui_open ──
+
+
+class GuiOpenStructured(TypedDict):
+    """Structured output for gui_open (live Inkscape GUI session)."""
+
+    app_id: str
+    document_path: str
+    status: str
+
+
+# ── gui_apply ──
+
+
+class GuiApplyStructured(TypedDict):
+    """Structured output for gui_apply (action sent to live GUI window)."""
+
+    app_id: str
+    operation: str
+    status: str
+
+
+# ── gui_export ──
+
+
+class GuiExportStructured(TypedDict):
+    """Structured output for gui_export (export current live window state)."""
+
+    output_path: str
+    format: str
+    file_size: NotRequired[int]
+
+
+# ── gui_close ──
+
+
+class GuiCloseStructured(TypedDict):
+    """Structured output for gui_close (terminate live GUI session)."""
+
+    app_id: str
+    status: str

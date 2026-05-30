@@ -34,7 +34,7 @@ class TestServerCreation:
         from inkscape_mcp.server import create_server
         server = create_server()
         assert server is not None
-        # All 7 tools registered
+        # All 11 tools registered (7 headless + 4 GUI live-driver)
         tools = list(server._tool_manager._tools.keys())
         assert "document_create" in tools
         assert "element_create" in tools
@@ -43,7 +43,11 @@ class TestServerCreation:
         assert "export_document" in tools
         assert "render_preview" in tools
         assert "run_actions" in tools
-        assert len(tools) == 7
+        assert "gui_open" in tools
+        assert "gui_apply" in tools
+        assert "gui_export" in tools
+        assert "gui_close" in tools
+        assert len(tools) == 11
 
     def test_resources_registered(self):
         """All required resources are registered (capabilities, doc-info, svg, preview)."""
@@ -78,7 +82,7 @@ class TestServerCreation:
         from inkscape_mcp.server import create_server
         server = create_server()
         tools = server._tool_manager.list_tools()
-        assert len(tools) == 7, f"Expected 7 tools, got {len(tools)}"
+        assert len(tools) == 11, f"Expected 11 tools, got {len(tools)}"
         for t in tools:
             assert t.output_schema is not None, (
                 f"Tool '{t.name}' has output_schema=None — "

@@ -29,7 +29,12 @@ from .tools import (
     tool_query,
     tool_render_preview,
     tool_run_actions,
+    tool_gui_open,
+    tool_gui_apply,
+    tool_gui_export,
+    tool_gui_close,
 )
+from .gui_session import GuiSessionManager
 from .resources import (
     resource_capabilities,
     resource_current_svg,
@@ -44,6 +49,10 @@ from .schemas import (
     ExportDocumentStructured as ExportDocumentResult,
     RenderPreviewStructured as RenderPreviewResult,
     RunActionsStructured as RunActionsResult,
+    GuiOpenStructured as GuiOpenResult,
+    GuiApplyStructured as GuiApplyResult,
+    GuiExportStructured as GuiExportResult,
+    GuiCloseStructured as GuiCloseResult,
 )
 
 
@@ -66,6 +75,7 @@ def create_server() -> FastMCP:
     )
 
     session_mgr = SessionManager(config)
+    gui_mgr = GuiSessionManager(config)
     project_root = _get_project_root()
 
     mcp = FastMCP("inkscape-mcp")
@@ -265,6 +275,90 @@ def create_server() -> FastMCP:
                 action_params=action_params,
                 expected_revision=expected_revision,
             )
+        except InkscapeError:
+            raise
+
+    # ═══════════════════════════════════════════
+    #  GUI tools (live --active-window driver)
+    # ═══════════════════════════════════════════
+
+    @mcp.tool(
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
+    async def gui_open(document_path: str) -> GuiOpenResult:
+        """Open (or reuse) a VISIBLE Inkscape GUI window for the document."""
+        try:
+            return await tool_gui_open(gui_mgr, config, document_path=document_path)
+        except InkscapeError:
+            raise
+
+    @mcp.tool(
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=True,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
+    async def gui_apply(
+        document_path: str,
+        operation: str,
+        object_ids: list[str],
+        action_params: dict[str, Any] | None = None,
+    ) -> GuiApplyResult:
+        """Apply a headless-safe action to the live GUI window (in-memory edit)."""
+        try:
+            return await tool_gui_apply(
+                gui_mgr, config,
+                document_path=document_path,
+                operation=operation,
+                object_ids=object_ids,
+                action_params=action_params,
+            )
+        except InkscapeError:
+            raise
+
+    @mcp.tool(
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
+    async def gui_export(
+        document_path: str,
+        output_name: str,
+        export_format: str = "svg",
+    ) -> GuiExportResult:
+        """Export the CURRENT live-window state to a file."""
+        try:
+            return await tool_gui_export(
+                gui_mgr, config,
+                document_path=document_path,
+                output_name=output_name,
+                export_format=export_format,
+            )
+        except InkscapeError:
+            raise
+
+    @mcp.tool(
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
+    async def gui_close(document_path: str) -> GuiCloseResult:
+        """Close the live GUI window for the document (terminate the session)."""
+        try:
+            return await tool_gui_close(gui_mgr, config, document_path=document_path)
         except InkscapeError:
             raise
 

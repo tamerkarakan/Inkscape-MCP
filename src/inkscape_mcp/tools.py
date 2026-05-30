@@ -852,3 +852,162 @@ async def tool_run_actions(
                                       f"revision={new_rev}"}],
             structured,
         )
+
+
+# ═══════════════════════════════════════════════════════
+#  GUI tool handlers (live --active-window driver)
+# ═══════════════════════════════════════════════════════
+#
+#  gui_open / gui_apply / gui_export / gui_close drive a VISIBLE Inkscape
+#  window via GuiSessionManager. Unlike the headless tools above, edits act on
+#  the in-memory document of the live window (no file write-back, no id_map).
+
+
+def _gui_app_id(document_path: str) -> str:
+    """Deterministic --app-id-tag per document, so reopening reuses the window."""
+    stem = Path(document_path).stem
+    safe = "".join(c for c in stem if c.isalnum() or c in "._-")
+    return f"inkmcp-{safe or 'doc'}"
+
+
+# GUI-safe live operations (CLI actions injected into the active window).
+# transform_translate is DOM-only (writes the file) → excluded here.
+_GUI_ALLOWED_OPS = {
+    "path_union",
+    "path_difference",
+    "path_intersection",
+    "path_exclusion",
+    "set_attribute",
+}
+
+
+async def tool_gui_open(
+    gui_mgr,
+    config: SecurityConfig,
+    document_path: str,
+) -> dict:
+    """Open (or reuse) a visible Inkscape GUI window for the document."""
+    svg_path = validate_path(Path(document_path), config)
+    app_id = _gui_app_id(document_path)
+    await gui_mgr.get_or_start(app_id, svg_path)
+    return _success(
+        [{"type": "text", "text": f"GUI window open for {svg_path.name} ({app_id})"}],
+        {
+            "app_id": app_id,
+            "document_path": str(svg_path),
+            "status": "open",
+        },
+    )
+
+
+async def tool_gui_apply(
+    gui_mgr,
+    config: SecurityConfig,
+    document_path: str,
+    operation: str,
+    object_ids: list[str],
+    action_params: dict[str, Any] | None = None,
+) -> dict:
+    """Apply a headless-safe action to the live GUI window (in-memory edit)."""
+    svg_path = validate_path(Path(document_path), config)
+    app_id = _gui_app_id(document_path)
+
+    if operation not in _GUI_ALLOWED_OPS:
+        raise InkscapeActionError(operation, f"Unknown GUI operation: {operation}")
+
+    # P0-2: argüman enjeksiyonu koruması (run_actions ile aynı kapı).
+    for oid in object_ids:
+        validate_action_arg(oid)
+    if action_params:
+        for key, val in action_params.items():
+            validate_action_arg(key)
+            validate_action_arg(str(val))
+
+    session = await gui_mgr.get_or_start(app_id, svg_path)
+
+    if operation == "path_union":
+        actions = chain_path_union(*object_ids)
+    elif operation == "path_difference":
+        actions = chain_path_difference(*object_ids)
+    elif operation == "path_intersection":
+        actions = chain_path_intersection(*object_ids)
+    elif operation == "path_exclusion":
+        actions = chain_path_exclusion(*object_ids)
+    elif operation == "set_attribute":
+        if not action_params:
+            raise InkscapeActionError("set_attribute", "action_params required")
+        attr = action_params.get("attribute", "")
+        value = action_params.get("value", "")
+        actions = chain_set_attribute(object_ids[0], attr, value)
+    else:  # pragma: no cover - guarded by _GUI_ALLOWED_OPS
+        actions = []
+
+    action_str = ";".join(
+        f"{name}:{arg}" if arg else name for name, arg in actions
+    )
+    await session.run_actions(action_str)
+
+    return _success(
+        [{"type": "text", "text": f"Applied '{operation}' to live window {app_id}"}],
+        {
+            "app_id": app_id,
+            "operation": operation,
+            "status": "applied",
+        },
+    )
+
+
+async def tool_gui_export(
+    gui_mgr,
+    config: SecurityConfig,
+    document_path: str,
+    output_name: str,
+    export_format: str = "svg",
+) -> dict:
+    """Export the CURRENT live-window state to a file (server-generated path)."""
+    svg_path = validate_path(Path(document_path), config)
+    app_id = _gui_app_id(document_path)
+
+    if export_format not in config.allowed_export_formats:
+        raise InkscapeExportError(
+            f"Unsupported export format: {export_format}. "
+            f"Allowed: {config.allowed_export_formats}"
+        )
+
+    safe_name = "".join(c for c in output_name if c.isalnum() or c in "._-")
+    output_path = config.workspace_root / f"{safe_name}.{export_format}"
+
+    session = await gui_mgr.get_or_start(app_id, svg_path)
+    await session.export_live(output_path, export_format)
+
+    if not output_path.exists():
+        raise InkscapeExportError(
+            f"Live export produced no output file: {output_path}"
+        )
+
+    file_size = output_path.stat().st_size
+    return _success(
+        [{"type": "text", "text": f"Live-exported to {output_path.name} ({file_size} bytes)"}],
+        {
+            "output_path": str(output_path),
+            "format": export_format,
+            "file_size": file_size,
+        },
+    )
+
+
+async def tool_gui_close(
+    gui_mgr,
+    config: SecurityConfig,
+    document_path: str,
+) -> dict:
+    """Close the live GUI window for the document (terminate the session)."""
+    app_id = _gui_app_id(document_path)
+    closed = await gui_mgr.close(app_id)
+    return _success(
+        [{"type": "text", "text": f"GUI window {app_id} {'closed' if closed else 'was not open'}"}],
+        {
+            "app_id": app_id,
+            "status": "closed" if closed else "not_open",
+        },
+    )
