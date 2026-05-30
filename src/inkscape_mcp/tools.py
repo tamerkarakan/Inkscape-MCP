@@ -1061,35 +1061,51 @@ async def tool_import_image(
     session_mgr: SessionManager,
     config: SecurityConfig,
     document_path: str,
-    image_path: str,
+    image_path: str | None = None,
     x: float = 0.0,
     y: float = 0.0,
     width: float | None = None,
     height: float | None = None,
     expected_revision: int | None = None,
+    image_data: str | None = None,
+    image_format: str = "png",
 ) -> dict:
-    """Embed a raster (PNG/JPG/GIF/WEBP) into the SVG as <image> via DOM."""
+    """Embed a raster (PNG/JPG/GIF/WEBP) into the SVG as <image> via DOM.
+
+    Source is EITHER a file (image_path, inside the workspace) OR raw bytes
+    (image_data = base64; image_format gives the type). image_data lets a
+    client embed a chat-pasted image that has no file on disk.
+    """
     import base64
     svg_path = validate_path(Path(document_path), config)
-    img_path = validate_path(Path(image_path), config)
-    if not img_path.exists():
-        raise InkscapeError(f"Image file not found: {img_path}")
-    suffix = img_path.suffix.lower()
-    mime_map = {
-        ".png": "image/png",
-        ".jpg": "image/jpeg",
-        ".jpeg": "image/jpeg",
-        ".gif": "image/gif",
-        ".webp": "image/webp",
+    fmt_mime = {
+        "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
+        "gif": "image/gif", "webp": "image/webp",
     }
-    mime = mime_map.get(suffix)
-    if mime is None:
-        raise InkscapeError(f"Unsupported image type: {suffix}")
+
+    if image_data is not None:
+        try:
+            img_bytes = base64.b64decode(image_data)
+        except Exception as exc:
+            raise InkscapeError(f"Invalid base64 image_data: {exc}")
+        mime = fmt_mime.get(image_format.lower().lstrip("."))
+        if mime is None:
+            raise InkscapeError(f"Unsupported image_format: {image_format}")
+    elif image_path:
+        img_path = validate_path(Path(image_path), config)
+        if not img_path.exists():
+            raise InkscapeError(f"Image file not found: {img_path}")
+        mime = fmt_mime.get(img_path.suffix.lower().lstrip("."))
+        if mime is None:
+            raise InkscapeError(f"Unsupported image type: {img_path.suffix}")
+        img_bytes = img_path.read_bytes()
+    else:
+        raise InkscapeError("Provide either image_path or image_data")
+
     if width is None:
         width = 100.0
     if height is None:
         height = 100.0
-    img_bytes = img_path.read_bytes()
     b64 = base64.b64encode(img_bytes).decode("ascii")
     data_uri = f"data:{mime};base64,{b64}"
     state = await session_mgr.get_or_open(svg_path)

@@ -404,20 +404,28 @@ def create_server() -> FastMCP:
     )
     async def import_image(
         document_path: str,
-        image_path: str,
+        image_path: str | None = None,
         x: float = 0.0,
         y: float = 0.0,
         width: float | None = None,
         height: float | None = None,
         expected_revision: int | None = None,
+        image_data: str | None = None,
+        image_format: str = "png",
     ) -> ImportImageResult:
-        """Embed a raster image (PNG/JPG/GIF/WEBP) into the SVG via DOM."""
+        """Embed a raster into the SVG via DOM.
+
+        Source is either image_path (a file in the workspace) OR image_data
+        (base64 bytes + image_format) — the latter lets you embed a chat-pasted
+        image that has no file on disk.
+        """
         try:
             return await tool_import_image(
                 session_mgr, config,
                 document_path=document_path, image_path=image_path,
                 x=x, y=y, width=width, height=height,
                 expected_revision=expected_revision,
+                image_data=image_data, image_format=image_format,
             )
         except InkscapeError:
             raise
