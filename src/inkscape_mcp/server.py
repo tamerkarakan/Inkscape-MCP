@@ -11,6 +11,7 @@ Environment variables:
 """
 from __future__ import annotations
 
+import asyncio
 import os
 from pathlib import Path
 from typing import Any
@@ -576,6 +577,8 @@ Follow these steps in order:
 
     # Store warm-up coroutine for run() to schedule
     mcp._warmup = _warmup_inkscape
+    # Store GUI session manager so run() can close windows on shutdown
+    mcp._gui_mgr = gui_mgr
 
     return mcp
 
@@ -587,12 +590,19 @@ async def run() -> None:
     warmup = getattr(server, "_warmup", None)
     if warmup:
         asyncio.create_task(warmup())
-    await server.run_stdio_async()
+    try:
+        await server.run_stdio_async()
+    finally:
+        gui_mgr = getattr(server, "_gui_mgr", None)
+        if gui_mgr is not None:
+            try:
+                await gui_mgr.close_all()
+            except Exception:
+                pass
 
 
 def main() -> None:
     """Entry point."""
-    import asyncio
     asyncio.run(run())
 
 
