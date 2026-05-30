@@ -49,7 +49,8 @@ class TestServerCreation:
         assert "gui_close" in tools
         assert "import_image" in tools
         assert "trace_bitmap" in tools
-        assert len(tools) == 13
+        assert "ask_user" in tools
+        assert len(tools) == 14
 
     def test_resources_registered(self):
         """All required resources are registered (capabilities, doc-info, svg, preview)."""
@@ -84,7 +85,7 @@ class TestServerCreation:
         from inkscape_mcp.server import create_server
         server = create_server()
         tools = server._tool_manager.list_tools()
-        assert len(tools) == 13, f"Expected 13 tools, got {len(tools)}"
+        assert len(tools) == 14, f"Expected 14 tools, got {len(tools)}"
         for t in tools:
             assert t.output_schema is not None, (
                 f"Tool '{t.name}' has output_schema=None — "

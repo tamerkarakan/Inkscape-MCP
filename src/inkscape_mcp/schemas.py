@@ -258,3 +258,14 @@ class TraceBitmapStructured(TypedDict):
     image_id: str
     id_preservation: str
     id_map: IdMap
+
+
+# ── ask_user ──
+
+
+class AskUserStructured(TypedDict):
+    """Structured result for ask_user (human elicitation)."""
+
+    answered: bool
+    action: str
+    response: str

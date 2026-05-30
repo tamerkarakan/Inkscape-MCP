@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from lxml import etree
+from pydantic import BaseModel, Field
 
 from .actions import (
     chain_export_png,
@@ -689,6 +690,7 @@ async def tool_run_actions(
     object_ids: list[str],
     action_params: dict[str, Any] | None = None,
     expected_revision: int | None = None,
+    ctx=None,
 ) -> dict:
     """Run a headless-safe Inkscape action on a document.
 
@@ -714,12 +716,15 @@ async def tool_run_actions(
             validate_action_arg(key)
             validate_action_arg(str(val))
 
-    # Check destructive policy
+    # Destructive-op confirmation gate (MCP elicitation)
     destructive_ops = {"path_union", "path_difference", "path_intersection",
                        "path_exclusion"}
-    if operation in destructive_ops and config.require_confirmation_for_destructive:
-        # For v1: allow but annotate. Full policy gate in later phase.
-        pass
+    if operation in destructive_ops:
+        confirmed = await _confirm_destructive(
+            ctx, config, f"{operation} on {', '.join(object_ids)}"
+        )
+        if not confirmed:
+            raise InkscapeActionError(operation, "destructive operation not confirmed by user")
 
     async with state.lock:
         session_mgr.check_revision(state, expected_revision)
@@ -1091,10 +1096,14 @@ async def tool_trace_bitmap(
     optimize: bool = True,
     remove_source: bool = False,
     expected_revision: int | None = None,
+    ctx=None,
 ) -> dict:
     """Trace an embedded <image> into <path> geometry (Inkscape object-trace)."""
     svg_path = validate_path(Path(document_path), config)
     validate_action_arg(image_id)
+    confirmed = await _confirm_destructive(ctx, config, f"trace_bitmap on {image_id}")
+    if not confirmed:
+        raise InkscapeActionError("trace_bitmap", "destructive operation not confirmed by user")
     state = await session_mgr.get_or_open(svg_path)
     async with state.lock:
         session_mgr.check_revision(state, expected_revision)
@@ -1148,4 +1157,78 @@ async def tool_trace_bitmap(
         return _success(
             [{"type": "text", "text": f"trace_bitmap on '{image_id}': created {len(id_map['created'])} path(s). revision={new_rev}"}],
             {"operation": "trace_bitmap", "revision": new_rev, "image_id": image_id, "id_preservation": id_preservation, "id_map": id_map}
+        )
+
+
+# ═══════════════════════════════════════════════════════
+#  Interaction tools (MCP elicitation — ask the human)
+# ═══════════════════════════════════════════════════════
+
+
+class _AskResponse(BaseModel):
+    response: str = Field(default="", description="The user's free-text answer")
+
+
+class _ConfirmResponse(BaseModel):
+    confirm: bool = Field(default=False, description="Confirm the destructive operation")
+
+
+async def _confirm_destructive(ctx, config, description: str) -> bool:
+    """Gate: user must confirm a destructive operation via MCP elicitation.
+
+    Policy: no ctx (direct/test) → proceed; confirmation disabled → proceed;
+    client lacks elicitation (elicit raises) → proceed (backward-compatible);
+    accept → honor data.confirm; decline/cancel → block.
+    """
+    if ctx is None:
+        return True
+    if not config.require_confirmation_for_destructive:
+        return True
+    try:
+        result = await ctx.elicit(
+            f"Confirm destructive operation: {description}",
+            _ConfirmResponse,
+        )
+    except Exception:
+        return True
+    if result.action == "accept":
+        return bool(result.data.confirm)
+    return False
+
+
+async def tool_ask_user(ctx, question: str, options: list[str] | None = None) -> dict:
+    """Ask the human (behind the client) a structured question via elicitation."""
+    if ctx is None:
+        return _success(
+            [{"type": "text", "text": f"ask_user: {question[:60]}"}],
+            {"answered": False, "action": "unsupported", "response": ""},
+        )
+
+    message = question
+    if options and len(options) > 0:
+        message += "\nOptions: " + ", ".join(options)
+
+    try:
+        result = await ctx.elicit(message=message, schema=_AskResponse)
+    except Exception:
+        return _success(
+            [{"type": "text", "text": f"ask_user: {question[:60]}"}],
+            {"answered": False, "action": "unsupported", "response": ""},
+        )
+
+    if result.action == "accept":
+        resp = getattr(result.data, "response", "")
+        return _success(
+            [{"type": "text", "text": f"ask_user: {question[:60]}"}],
+            {"answered": True, "action": "accept", "response": resp},
+        )
+    elif result.action == "decline":
+        return _success(
+            [{"type": "text", "text": f"ask_user: {question[:60]}"}],
+            {"answered": False, "action": "decline", "response": ""},
+        )
+    else:
+        return _success(
+            [{"type": "text", "text": f"ask_user: {question[:60]}"}],
+            {"answered": False, "action": "cancel", "response": ""},
         )

@@ -16,7 +16,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import Context, FastMCP
 from mcp.types import ToolAnnotations
 
 from .exceptions import InkscapeError
@@ -36,6 +36,7 @@ from .tools import (
     tool_gui_close,
     tool_import_image,
     tool_trace_bitmap,
+    tool_ask_user,
 )
 from .gui_session import GuiSessionManager
 from .resources import (
@@ -58,6 +59,7 @@ from .schemas import (
     GuiCloseStructured as GuiCloseResult,
     ImportImageStructured as ImportImageResult,
     TraceBitmapStructured as TraceBitmapResult,
+    AskUserStructured as AskUserResult,
 )
 
 
@@ -266,6 +268,7 @@ def create_server() -> FastMCP:
         object_ids: list[str],
         action_params: dict[str, Any] | None = None,
         expected_revision: int | None = None,
+        ctx: Context = None,
     ) -> RunActionsResult:
         """Run a headless-safe Inkscape action (path ops, set_attribute, transform).
 
@@ -279,6 +282,7 @@ def create_server() -> FastMCP:
                 object_ids=object_ids,
                 action_params=action_params,
                 expected_revision=expected_revision,
+                ctx=ctx,
             )
         except InkscapeError:
             raise
@@ -419,6 +423,7 @@ def create_server() -> FastMCP:
         optimize: bool = True,
         remove_source: bool = False,
         expected_revision: int | None = None,
+        ctx: Context = None,
     ) -> TraceBitmapResult:
         """Trace an embedded <image> into <path> geometry (Inkscape object-trace)."""
         try:
@@ -429,9 +434,30 @@ def create_server() -> FastMCP:
                 remove_background=remove_background, speckles=speckles,
                 smooth_corners=smooth_corners, optimize=optimize,
                 remove_source=remove_source, expected_revision=expected_revision,
+                ctx=ctx,
             )
         except InkscapeError:
             raise
+
+    # ═══════════════════════════════════════════
+    #  Interaction (MCP elicitation)
+    # ═══════════════════════════════════════════
+
+    @mcp.tool(
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=True,
+        ),
+    )
+    async def ask_user(
+        question: str,
+        options: list[str] | None = None,
+        ctx: Context = None,
+    ) -> AskUserResult:
+        """Ask the human (behind the client) a structured question via elicitation."""
+        return await tool_ask_user(ctx, question, options)
 
     # ═══════════════════════════════════════════
     #  Resources
