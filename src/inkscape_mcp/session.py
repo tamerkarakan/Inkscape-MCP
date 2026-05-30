@@ -90,6 +90,46 @@ class SessionManager:
         key = str(resolved.resolve(strict=False))
         return os.path.normcase(key)
 
+    # ── Revision persistence (Madde 3: sidecar) ──
+
+    @staticmethod
+    def _revision_path(svg_path: Path) -> Path:
+        """Return the sidecar path for revision tracking."""
+        return svg_path.with_suffix(svg_path.suffix + ".inkrev")
+
+    def _read_revision(self, svg_path: Path) -> int:
+        """Read persisted revision from sidecar file.
+
+        Falls back to 1 if sidecar doesn't exist (first open).
+        """
+        rp = self._revision_path(svg_path)
+        try:
+            if rp.exists():
+                data = rp.read_text(encoding="utf-8").strip()
+                return int(data)
+        except (ValueError, OSError):
+            pass
+        return 1
+
+    def _write_revision(self, svg_path: Path, revision: int) -> None:
+        """Persist revision to sidecar file atomically."""
+        rp = self._revision_path(svg_path)
+        tmp = rp.with_suffix(rp.suffix + ".tmp")
+        try:
+            tmp.write_text(str(revision), encoding="utf-8")
+            os.replace(tmp, rp)
+        except OSError:
+            pass
+
+    def increment_revision(self, state: DocumentState) -> int:
+        """Increment and persist the document revision.
+
+        Returns the new revision number.
+        """
+        state.revision += 1
+        self._write_revision(state.svg_path, state.revision)
+        return state.revision
+
     async def get_or_open(self, svg_path: Path) -> DocumentState:
         """Get existing session or create a new one (with lock).
 
@@ -102,6 +142,7 @@ class SessionManager:
             if not svg_path.exists():
                 raise DocumentNotFoundError(f"SVG file not found: {svg_path}")
             state = DocumentState(svg_path=svg_path)
+            state.revision = self._read_revision(svg_path)
             self._load_unit_info(state)
             self._documents[key] = state
 
@@ -113,6 +154,7 @@ class SessionManager:
         """Register a newly created document."""
         key = self._normalize_key(svg_path)
         state = DocumentState(svg_path=svg_path, revision=revision)
+        self._write_revision(svg_path, revision)
         self._load_unit_info(state)
         self._documents[key] = state
         return state

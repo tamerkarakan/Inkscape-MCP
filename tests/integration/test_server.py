@@ -57,8 +57,8 @@ class TestServerCreation:
         assert any("document-info" in t for t in templates)
         assert any("svg" in t for t in templates)
         assert any("preview" in t for t in templates)
-        # Total: 1 static + 3 templated
-        assert len(static) == 1
+        # Total: 2 static + 3 templated
+        assert len(static) == 2
         assert len(templates) == 3
 
     def test_tool_annotations_present(self):

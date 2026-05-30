@@ -78,7 +78,7 @@ def create_server() -> FastMCP:
             destructiveHint=False,
             idempotentHint=False,
             openWorldHint=False,
-        )
+        ),
     )
     async def document_create(
         width: float = 200.0,
@@ -102,7 +102,7 @@ def create_server() -> FastMCP:
             destructiveHint=False,
             idempotentHint=False,
             openWorldHint=False,
-        )
+        ),
     )
     async def element_create(
         document_path: str,
@@ -128,7 +128,7 @@ def create_server() -> FastMCP:
             destructiveHint=False,
             idempotentHint=False,
             openWorldHint=False,
-        )
+        ),
     )
     async def element_update(
         document_path: str,
@@ -154,7 +154,7 @@ def create_server() -> FastMCP:
             destructiveHint=False,
             idempotentHint=True,
             openWorldHint=False,
-        )
+        ),
     )
     async def query_geometry(
         document_path: str,
@@ -176,7 +176,7 @@ def create_server() -> FastMCP:
             destructiveHint=False,
             idempotentHint=True,
             openWorldHint=False,
-        )
+        ),
     )
     async def export_document(
         document_path: str,
@@ -211,7 +211,7 @@ def create_server() -> FastMCP:
             destructiveHint=False,
             idempotentHint=True,
             openWorldHint=False,
-        )
+        ),
     )
     async def render_preview(
         document_path: str,
@@ -234,7 +234,7 @@ def create_server() -> FastMCP:
             destructiveHint=True,
             idempotentHint=False,
             openWorldHint=False,
-        )
+        ),
     )
     async def run_actions(
         document_path: str,
@@ -277,7 +277,7 @@ def create_server() -> FastMCP:
         try:
             return await resource_document_info(session_mgr, config, document_path)
         except InkscapeError as e:
-            return str(e)
+            return e.to_dict()
 
     @mcp.resource("inkscape://session/svg/{document_path}")
     async def get_current_svg(document_path: str) -> str:
@@ -290,21 +290,72 @@ def create_server() -> FastMCP:
 
     @mcp.resource("inkscape://session/preview/{document_path}")
     async def get_preview(document_path: str) -> str:
-        """PNG preview resource for the current SVG document."""
+        """PNG preview resource (base64) for the current SVG document."""
         try:
             result = await tool_render_preview(
                 session_mgr, config,
                 document_path=document_path,
             )
             if result.get("isError"):
-                return result.get("content", [{}])[0].get("text", "Preview error")
+                return str(result.get("content", [{}])[0].get("text", "Preview error"))
             for item in result.get("content", []):
                 if item.get("type") == "image":
                     return item.get("data", "")
             sc = result.get("structuredContent", {})
-            return str(sc.get("preview_resource", "Preview unavailable"))
+            preview_path = sc.get("preview_resource", "")
+            return str(preview_path) if preview_path else "Preview unavailable"
         except InkscapeError as e:
             return str(e)
+
+    @mcp.resource("inkscape://session/list")
+    def list_sessions() -> dict:
+        """List all open document sessions."""
+        return {
+            "sessions": {
+                key: {
+                    "revision": state.revision,
+                    "last_access": state.last_access,
+                }
+                for key, state in session_mgr._documents.items()
+            }
+        }
+
+    # ── Cold-start warm-up (background; non-blocking) ──
+    async def _warmup_inkscape() -> None:
+        """Pre-warm Inkscape binary to avoid >30s cold-start timeout."""
+        import tempfile
+        warmup_svg = """<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"
+     viewBox="0 0 10 10">
+  <rect id="w" x="1" y="1" width="8" height="8"/>
+</svg>"""
+        try:
+            with tempfile.NamedTemporaryFile(
+                suffix=".svg", delete=False, mode="w", encoding="utf-8"
+            ) as f:
+                f.write(warmup_svg)
+                tmp_path = f.name
+            try:
+                binary = os.environ.get(
+                    "INKSCAPE_BIN",
+                    "inkscape.com" if os.name == "nt" else "inkscape",
+                )
+                proc = await asyncio.create_subprocess_exec(
+                    binary, "--query-all", tmp_path,
+                    stdout=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.DEVNULL,
+                )
+                await asyncio.wait_for(proc.communicate(), timeout=60)
+            finally:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+        except Exception:
+            pass  # Warm-up failure is non-fatal
+
+    # Store warm-up coroutine for run() to schedule
+    mcp._warmup = _warmup_inkscape
 
     return mcp
 
@@ -312,6 +363,10 @@ def create_server() -> FastMCP:
 async def run() -> None:
     """Run the MCP server over stdio transport."""
     server = create_server()
+    # Schedule cold-start warm-up in background
+    warmup = getattr(server, "_warmup", None)
+    if warmup:
+        asyncio.create_task(warmup())
     await server.run_stdio_async()
 
 

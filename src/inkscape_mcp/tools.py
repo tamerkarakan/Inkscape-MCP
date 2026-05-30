@@ -307,8 +307,7 @@ async def tool_element_create(
         atomic_write_svg(state.svg_path, new_svg, config)
 
         # Update revision
-        state.revision += 1
-        new_rev = state.revision
+        new_rev = session_mgr.increment_revision(state)
 
         # Compute px-equivalent coordinates (F5: user-unit → px for reference)
         px_coords = {}
@@ -405,8 +404,7 @@ async def tool_element_update(
         atomic_write_svg(state.svg_path, new_svg, config)
 
         # Update revision
-        state.revision += 1
-        new_rev = state.revision
+        new_rev = session_mgr.increment_revision(state)
 
     return _success(
         [{"type": "text", "text": f"Updated {object_id} ({len(properties)} properties)"}],
@@ -634,6 +632,54 @@ async def tool_render_preview(
 # ── run_actions (Inkscape CLI escape hatch) ──
 
 
+def _apply_transform_translate_dom(
+    svg_bytes: bytes,
+    object_id: str,
+    dx: float,
+    dy: float,
+) -> bytes:
+    """Apply translate to an element's x/y attributes via DOM (lxml).
+
+    Madde 12: DOM baseline — bakes dx/dy into x/y attributes directly.
+    Inkscape CLI transform-translate is kept for verification / advanced ops.
+
+    Returns modified SVG bytes.
+    """
+    tree = etree.fromstring(svg_bytes)
+    found = tree.xpath(f"//*[@id='{object_id}']")
+    if not found:
+        raise IdNotFoundError(object_id)
+
+    elem = found[0]
+
+    # Bake translation into x and y attributes
+    for attr in ("x", "y", "cx", "cy"):
+        val = elem.get(attr)
+        if val is not None:
+            try:
+                new_val = float(val) + (dx if attr in ("x", "cx") else dy)
+                elem.set(attr, str(new_val))
+            except ValueError:
+                pass
+
+    # If element has no position attributes, add a transform attribute as fallback
+    has_pos = any(elem.get(a) is not None for a in ("x", "y", "cx", "cy"))
+    if not has_pos:
+        existing_transform = elem.get("transform", "")
+        translate_str = f"translate({dx},{dy})"
+        if existing_transform:
+            elem.set("transform", f"{existing_transform} {translate_str}")
+        else:
+            elem.set("transform", translate_str)
+
+    return etree.tostring(
+        tree,
+        xml_declaration=True,
+        encoding="UTF-8",
+        pretty_print=True,
+    )
+
+
 async def tool_run_actions(
     session_mgr: SessionManager,
     config: SecurityConfig,
@@ -706,7 +752,32 @@ async def tool_run_actions(
                 raise InkscapeActionError("transform_translate", "action_params required")
             dx = float(action_params.get("dx", 0))
             dy = float(action_params.get("dy", 0))
-            actions = chain_transform_translate(object_ids[0], dx, dy)
+
+            # Madde 12: DOM baseline — bake x/y via lxml, no CLI
+            data_after = _apply_transform_translate_dom(data, object_ids[0], dx, dy)
+            atomic_write_svg(state.svg_path, data_after, config)
+
+            # Collect IDs after (same IDs, just moved)
+            tree_after = etree.fromstring(data_after)
+            ids_after = session_mgr.collect_ids(tree_after)
+            id_map = session_mgr.diff_ids(ids_before, ids_after)
+
+            # Update revision
+            new_rev = session_mgr.increment_revision(state)
+
+            structured = {
+                "operation": operation,
+                "revision": new_rev,
+                "id_preservation": "preserving",
+                "id_map": id_map,
+                "dx": dx,
+                "dy": dy,
+            }
+
+            return _success(
+                [{"type": "text", "text": f"Operation '{operation}' completed via DOM (dx={dx}, dy={dy}). revision={new_rev}"}],
+                structured,
+            )
         else:
             actions = []
 
@@ -762,8 +833,7 @@ async def tool_run_actions(
         state.destroyed_ids.update(id_map["destroyed"])
 
         # Update revision
-        state.revision += 1
-        new_rev = state.revision
+        new_rev = session_mgr.increment_revision(state)
 
         # Determine if id-changing
         is_id_changing = len(id_map["destroyed"]) > 0 or len(id_map["created"]) > 0

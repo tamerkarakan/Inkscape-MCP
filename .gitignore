@@ -17,3 +17,5 @@ Thumbs.db
 # Inkscape MCP runtime workspace
 /workspace/
 *.tmp
+# Revision sidecar files (Madde 3)
+*.inkrev
