@@ -36,6 +36,15 @@ from .resources import (
     resource_document_info,
 )
 from .capabilities import load_capabilities as _load_caps
+from .schemas import (
+    DocumentCreateResult,
+    ElementCreateResult,
+    ElementUpdateResult,
+    QueryGeometryResult,
+    ExportDocumentResult,
+    RenderPreviewResult,
+    RunActionsResult,
+)
 
 
 def _get_project_root() -> Path:
@@ -85,7 +94,7 @@ def create_server() -> FastMCP:
         height: float = 200.0,
         view_box: str | None = None,
         doc_name: str = "document",
-    ) -> dict:
+    ) -> DocumentCreateResult:
         """Create a new empty SVG document via DOM (no Inkscape CLI)."""
         try:
             return await tool_document_create(
@@ -109,7 +118,7 @@ def create_server() -> FastMCP:
         element_type: str,
         properties: dict[str, Any],
         expected_revision: int | None = None,
-    ) -> dict:
+    ) -> ElementCreateResult:
         """Create a new SVG element (rect, circle, path, text) via DOM."""
         try:
             return await tool_element_create(
@@ -135,7 +144,7 @@ def create_server() -> FastMCP:
         object_id: str,
         properties: dict[str, Any],
         expected_revision: int | None = None,
-    ) -> dict:
+    ) -> ElementUpdateResult:
         """Update properties of existing SVG element via DOM (Madde 12)."""
         try:
             return await tool_element_update(
@@ -159,7 +168,7 @@ def create_server() -> FastMCP:
     async def query_geometry(
         document_path: str,
         object_ids: list[str] | None = None,
-    ) -> dict:
+    ) -> QueryGeometryResult:
         """Query object bounding boxes (user-unit coordinates)."""
         try:
             return await tool_query(
@@ -189,7 +198,7 @@ def create_server() -> FastMCP:
         background: str | None = None,
         object_ids: list[str] | None = None,
         expected_revision: int | None = None,
-    ) -> dict:
+    ) -> ExportDocumentResult:
         """Export SVG to PNG/SVG/PDF via Inkscape CLI."""
         try:
             return await tool_export(
@@ -217,7 +226,7 @@ def create_server() -> FastMCP:
         document_path: str,
         width: int = 400,
         height: int | None = None,
-    ) -> dict:
+    ) -> RenderPreviewResult:
         """Render a PNG preview of the current SVG."""
         try:
             return await tool_render_preview(
@@ -242,7 +251,7 @@ def create_server() -> FastMCP:
         object_ids: list[str],
         action_params: dict[str, Any] | None = None,
         expected_revision: int | None = None,
-    ) -> dict:
+    ) -> RunActionsResult:
         """Run a headless-safe Inkscape action (path ops, set_attribute, transform).
 
         id-changing operations return an id_map {survived, destroyed, created}.

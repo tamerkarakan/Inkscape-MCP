@@ -73,6 +73,18 @@ class TestServerCreation:
             assert isinstance(tool.annotations.idempotentHint, bool)
             assert isinstance(tool.annotations.openWorldHint, bool)
 
+    def test_output_schema_present_for_all_tools(self):
+        """Madde 9a: every tool's output_schema must be non-None (TypedDict return type)."""
+        from inkscape_mcp.server import create_server
+        server = create_server()
+        tools = server._tool_manager.list_tools()
+        assert len(tools) == 7, f"Expected 7 tools, got {len(tools)}"
+        for t in tools:
+            assert t.output_schema is not None, (
+                f"Tool '{t.name}' has output_schema=None — "
+                f"return type annotation missing or not TypedDict"
+            )
+
 
 # ═══════════════════════════════════════════════════════
 #  T-2: Production run_actions injection test

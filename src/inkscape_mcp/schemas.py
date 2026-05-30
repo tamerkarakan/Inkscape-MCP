@@ -1,222 +1,191 @@
 """
-JSON Schema definitions for FastMCP tool output schemas.
+TypedDict return types for FastMCP tool outputSchema generation.
 
-Madde 9: structuredContent dönen her tool'a outputSchema deklare et.
+FastMCP auto-generates outputSchema from the tool's return-type annotation.
+Each TypedDict matches what the tool ACTUALLY returns (content + structuredContent).
+
+Madde 9: structuredContent dönen her tool artık TypedDict return tipine sahip.
 """
 
 from __future__ import annotations
 
-# ── document_create output ──
+from typing import Any, NotRequired, TypedDict
 
-DOCUMENT_CREATE_OUTPUT: dict = {
-    "type": "object",
-    "properties": {
-        "content": {
-            "type": "array",
-            "items": {"type": "object", "properties": {"type": {"type": "string"}, "text": {"type": "string"}}},
-        },
-        "structuredContent": {
-            "type": "object",
-            "properties": {
-                "document_path": {"type": "string", "description": "Absolute path to the created SVG file"},
-                "file_name": {"type": "string", "description": "Filename of the created SVG"},
-                "revision": {"type": "integer", "description": "Document revision number (starts at 1)"},
-                "width": {"type": "number", "description": "Document width in user units"},
-                "height": {"type": "number", "description": "Document height in user units"},
-                "viewBox": {"type": "string", "description": "SVG viewBox attribute value"},
-            },
-            "required": ["document_path", "file_name", "revision", "width", "height", "viewBox"],
-        },
-    },
-}
+# ── Content blocks ──
 
-# ── element_create output ──
 
-ELEMENT_CREATE_OUTPUT: dict = {
-    "type": "object",
-    "properties": {
-        "content": {
-            "type": "array",
-            "items": {"type": "object", "properties": {"type": {"type": "string"}, "text": {"type": "string"}}},
-        },
-        "structuredContent": {
-            "type": "object",
-            "properties": {
-                "element_id": {"type": "string", "description": "UUID-based SVG element id (e.g. rect_a1b2c3d4e5f6)"},
-                "element_type": {"type": "string", "description": "SVG element type: rect, circle, path, text"},
-                "revision": {"type": "integer", "description": "New document revision after creation"},
-                "px_coords": {
-                    "type": "object",
-                    "description": "Pixel-equivalent coordinates (x, y, cx, cy, r, width, height)",
-                    "additionalProperties": {"type": "number"},
-                },
-            },
-            "required": ["element_id", "element_type", "revision"],
-        },
-    },
-}
+class TextContent(TypedDict):
+    """A text content block (used in both success and error responses)."""
 
-# ── element_update output ──
+    type: str
+    text: str
 
-ELEMENT_UPDATE_OUTPUT: dict = {
-    "type": "object",
-    "properties": {
-        "content": {
-            "type": "array",
-            "items": {"type": "object", "properties": {"type": {"type": "string"}, "text": {"type": "string"}}},
-        },
-        "structuredContent": {
-            "type": "object",
-            "properties": {
-                "object_id": {"type": "string", "description": "Updated SVG element id"},
-                "revision": {"type": "integer", "description": "New document revision after update"},
-                "updated_properties": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "List of property names that were updated",
-                },
-            },
-            "required": ["object_id", "revision", "updated_properties"],
-        },
-    },
-}
 
-# ── query_geometry output ──
+# ── document_create ──
 
-QUERY_GEOMETRY_OUTPUT: dict = {
-    "type": "object",
-    "properties": {
-        "content": {
-            "type": "array",
-            "items": {"type": "object", "properties": {"type": {"type": "string"}, "text": {"type": "string"}}},
-        },
-        "structuredContent": {
-            "type": "object",
-            "properties": {
-                "revision": {"type": "integer", "description": "Current document revision"},
-                "objects": {
-                    "type": "object",
-                    "description": "Map of object_id → {x, y, width, height} in user-unit coordinates",
-                    "additionalProperties": {
-                        "type": "object",
-                        "properties": {
-                            "x": {"type": "number"},
-                            "y": {"type": "number"},
-                            "width": {"type": "number"},
-                            "height": {"type": "number"},
-                        },
-                    },
-                },
-                "document": {
-                    "type": "object",
-                    "description": "Document-level info (viewBox, dimensions, unit conversion, revision)",
-                    "properties": {
-                        "width_px": {"type": "number"},
-                        "height_px": {"type": "number"},
-                        "viewBox": {
-                            "type": "object",
-                            "properties": {"x": {"type": "number"}, "y": {"type": "number"}, "width": {"type": "number"}, "height": {"type": "number"}},
-                        },
-                        "px_to_user_unit": {"type": "number"},
-                        "user_unit_to_px": {"type": "number"},
-                        "revision": {"type": "integer"},
-                    },
-                },
-            },
-            "required": ["revision", "objects", "document"],
-        },
-    },
-}
 
-# ── export_document output ──
+class DocumentCreateStructured(TypedDict):
+    """Structured output for document_create."""
 
-EXPORT_DOCUMENT_OUTPUT: dict = {
-    "type": "object",
-    "properties": {
-        "content": {
-            "type": "array",
-            "items": {"type": "object", "properties": {"type": {"type": "string"}, "text": {"type": "string"}}},
-        },
-        "structuredContent": {
-            "type": "object",
-            "properties": {
-                "output_path": {"type": "string", "description": "Absolute path to the exported file"},
-                "format": {"type": "string", "description": "Export format (png, svg, pdf, etc.)"},
-                "file_size": {"type": "integer", "description": "Size of exported file in bytes"},
-            },
-            "required": ["output_path", "format"],
-        },
-    },
-}
+    document_path: str
+    file_name: str
+    revision: int
+    width: float
+    height: float
+    viewBox: str
 
-# ── render_preview output ──
 
-RENDER_PREVIEW_OUTPUT: dict = {
-    "type": "object",
-    "properties": {
-        "content": {
-            "type": "array",
-            "items": {
-                "oneOf": [
-                    {"type": "object", "properties": {"type": {"const": "text"}, "text": {"type": "string"}}},
-                    {"type": "object", "properties": {"type": {"const": "image"}, "data": {"type": "string"}, "mimeType": {"const": "image/png"}}},
-                ],
-            },
-        },
-        "structuredContent": {
-            "type": "object",
-            "properties": {
-                "preview_available": {"type": "boolean", "description": "Whether a preview was rendered"},
-                "preview_size": {"type": "integer", "description": "Size of preview PNG in bytes (if inline)"},
-                "revision": {"type": "integer", "description": "Document revision at time of preview"},
-                "preview_resource": {"type": "string", "description": "Resource URI for large previews that exceed inline limit"},
-            },
-        },
-    },
-}
+class DocumentCreateResult(TypedDict):
+    """Return type for document_create tool."""
 
-# ── run_actions output ──
+    content: list[TextContent]
+    structuredContent: DocumentCreateStructured
+    isError: NotRequired[bool]
 
-RUN_ACTIONS_OUTPUT: dict = {
-    "type": "object",
-    "properties": {
-        "content": {
-            "type": "array",
-            "items": {"type": "object", "properties": {"type": {"type": "string"}, "text": {"type": "string"}}},
-        },
-        "structuredContent": {
-            "type": "object",
-            "properties": {
-                "operation": {"type": "string", "description": "The operation that was performed"},
-                "revision": {"type": "integer", "description": "New document revision after the operation"},
-                "id_preservation": {
-                    "type": "string",
-                    "enum": ["preserving", "changing"],
-                    "description": "Whether the operation preserved or changed element IDs",
-                },
-                "id_map": {
-                    "type": "object",
-                    "description": "Map of ID changes: {survived: {old→new}, destroyed: [...], created: [...]}",
-                    "properties": {
-                        "survived": {
-                            "type": "object",
-                            "additionalProperties": {"type": "string"},
-                            "description": "IDs that survived the operation (old_id → new_id)",
-                        },
-                        "destroyed": {
-                            "type": "array",
-                            "items": {"type": "string"},
-                            "description": "IDs that were destroyed by the operation",
-                        },
-                        "created": {
-                            "type": "array",
-                            "items": {"type": "string"},
-                            "description": "New IDs created by the operation",
-                        },
-                    },
-                },
-            },
-            "required": ["operation", "revision", "id_preservation", "id_map"],
-        },
-    },
-}
+
+# ── element_create ──
+
+
+class ElementCreateStructured(TypedDict):
+    """Structured output for element_create."""
+
+    element_id: str
+    element_type: str
+    revision: int
+    px_coords: NotRequired[dict[str, float]]
+
+
+class ElementCreateResult(TypedDict):
+    """Return type for element_create tool."""
+
+    content: list[TextContent]
+    structuredContent: ElementCreateStructured
+    isError: NotRequired[bool]
+
+
+# ── element_update ──
+
+
+class ElementUpdateStructured(TypedDict):
+    """Structured output for element_update."""
+
+    object_id: str
+    revision: int
+    updated_properties: list[str]
+
+
+class ElementUpdateResult(TypedDict):
+    """Return type for element_update tool."""
+
+    content: list[TextContent]
+    structuredContent: ElementUpdateStructured
+    isError: NotRequired[bool]
+
+
+# ── query_geometry ──
+
+
+class GeometryObject(TypedDict):
+    """Per-object geometry (user-unit coordinates)."""
+
+    x: float
+    y: float
+    width: float
+    height: float
+
+
+class DocumentInfo(TypedDict):
+    """Document-level info block."""
+
+    width_px: float
+    height_px: float
+    viewBox: dict[str, float]
+    px_to_user_unit: float
+    user_unit_to_px: float
+    revision: int
+
+
+class QueryGeometryStructured(TypedDict):
+    """Structured output for query_geometry."""
+
+    revision: int
+    objects: dict[str, GeometryObject]
+    document: DocumentInfo
+
+
+class QueryGeometryResult(TypedDict):
+    """Return type for query_geometry tool."""
+
+    content: list[TextContent]
+    structuredContent: QueryGeometryStructured
+    isError: NotRequired[bool]
+
+
+# ── export_document ──
+
+
+class ExportDocumentStructured(TypedDict):
+    """Structured output for export_document."""
+
+    output_path: str
+    format: str
+    file_size: NotRequired[int]
+
+
+class ExportDocumentResult(TypedDict):
+    """Return type for export_document tool."""
+
+    content: list[TextContent]
+    structuredContent: ExportDocumentStructured
+    isError: NotRequired[bool]
+
+
+# ── render_preview ──
+
+
+class RenderPreviewStructured(TypedDict):
+    """Structured output for render_preview."""
+
+    preview_available: bool
+    preview_size: NotRequired[int]
+    revision: NotRequired[int]
+    preview_resource: NotRequired[str]
+
+
+class RenderPreviewResult(TypedDict):
+    """Return type for render_preview tool.
+
+    Note: content may contain TextContent OR ImageContent blocks.
+    """
+
+    content: list[dict[str, str]]
+    structuredContent: RenderPreviewStructured
+    isError: NotRequired[bool]
+
+
+# ── run_actions ──
+
+
+class IdMap(TypedDict):
+    """id_map block: survived, destroyed, created."""
+
+    survived: dict[str, str]
+    destroyed: list[str]
+    created: list[str]
+
+
+class RunActionsStructured(TypedDict):
+    """Structured output for run_actions."""
+
+    operation: str
+    revision: int
+    id_preservation: str
+    id_map: IdMap
+
+
+class RunActionsResult(TypedDict):
+    """Return type for run_actions tool."""
+
+    content: list[TextContent]
+    structuredContent: RunActionsStructured
+    isError: NotRequired[bool]
