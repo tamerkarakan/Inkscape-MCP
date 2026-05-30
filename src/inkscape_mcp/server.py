@@ -98,7 +98,21 @@ def create_server() -> FastMCP:
     gui_mgr = GuiSessionManager(config)
     project_root = _get_project_root()
 
-    mcp = FastMCP("inkscape-mcp")
+    mcp = FastMCP(
+        "inkscape-mcp",
+        instructions=(
+            "Inkscape SVG editor. AFTER ANY tool that modifies a document "
+            "(write_svg, element_create/update, transform_element, "
+            "reorder_element, create_gradient/pattern, import_image, "
+            "trace_bitmap, run_actions), call render_preview as the LAST step so "
+            "the user SEES the result — do not wait to be asked. "
+            "Authoring: capable clients may emit the whole SVG in one write_svg "
+            "call; otherwise build incrementally with element_create (which the "
+            "MCP turns into valid SVG). Files: call workspace_info to learn where "
+            "to put input images and find outputs; keep everything under that "
+            "directory."
+        ),
+    )
 
     def _to_error(err: InkscapeError) -> dict:
         return {

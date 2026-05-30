@@ -103,6 +103,14 @@ class TestServerCreation:
                 f"return type annotation missing or not TypedDict"
             )
 
+    def test_server_instructions_nudge_preview(self):
+        """Server instructions tell clients to render_preview after edits (auto-preview)."""
+        from inkscape_mcp.server import create_server
+        server = create_server()
+        ins = getattr(server, "instructions", None)
+        assert ins, "server has no instructions"
+        assert "render_preview" in ins
+
 
 # ═══════════════════════════════════════════════════════
 #  T-2: Production run_actions injection test
