@@ -410,9 +410,11 @@ def test_run_actions_handler_path_union(inkscape_workspace):
         )
     )
 
-    # Must NOT error (pre-fix this raised NameError: _run_inkscape_sync)
-    assert result.get("isError") is not True, result
-    id_map = result["structuredContent"]["id_map"]
+    # Must NOT error (pre-fix this raised NameError: _run_inkscape_sync).
+    # Handlers now return the structured payload directly (FastMCP-idiomatic),
+    # so id_map is at the top level, not under "structuredContent".
+    assert isinstance(result, dict), result
+    id_map = result["id_map"]
     # F8: path-union keeps the lowest z-order operand (r1), destroys c1
     assert "c1" in id_map["destroyed"], f"c1 should be destroyed, got {id_map}"
     assert "r1" in id_map.get("survived", {}), f"r1 should survive, got {id_map}"

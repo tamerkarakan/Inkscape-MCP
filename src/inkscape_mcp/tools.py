@@ -62,11 +62,12 @@ _SVG_TEMPLATE = """<?xml version="1.0" encoding="UTF-8"?>
 
 
 def _success(content: list[dict], structured: dict | None = None) -> dict:
-    """Build an MCP success result."""
-    result: dict = {"content": content}
-    if structured:
-        result["structuredContent"] = structured
-    return result
+    """Return the structured PAYLOAD directly (FastMCP wraps + validates it).
+
+    FastMCP builds content + structuredContent from the returned payload and
+    validates it against the tool's XxxStructured return annotation. The
+    `content` arg is ignored (FastMCP auto-generates text content)."""
+    return structured if structured is not None else {}
 
 
 def _error(err: InkscapeError) -> dict:

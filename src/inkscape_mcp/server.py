@@ -37,13 +37,13 @@ from .resources import (
 )
 from .capabilities import load_capabilities as _load_caps
 from .schemas import (
-    DocumentCreateResult,
-    ElementCreateResult,
-    ElementUpdateResult,
-    QueryGeometryResult,
-    ExportDocumentResult,
-    RenderPreviewResult,
-    RunActionsResult,
+    DocumentCreateStructured as DocumentCreateResult,
+    ElementCreateStructured as ElementCreateResult,
+    ElementUpdateStructured as ElementUpdateResult,
+    QueryGeometryStructured as QueryGeometryResult,
+    ExportDocumentStructured as ExportDocumentResult,
+    RenderPreviewStructured as RenderPreviewResult,
+    RunActionsStructured as RunActionsResult,
 )
 
 
@@ -102,8 +102,8 @@ def create_server() -> FastMCP:
                 width=width, height=height,
                 view_box=view_box, doc_name=doc_name,
             )
-        except InkscapeError as e:
-            return _to_error(e)
+        except InkscapeError:
+            raise
 
     @mcp.tool(
         annotations=ToolAnnotations(
@@ -128,8 +128,8 @@ def create_server() -> FastMCP:
                 properties=properties,
                 expected_revision=expected_revision,
             )
-        except InkscapeError as e:
-            return _to_error(e)
+        except InkscapeError:
+            raise
 
     @mcp.tool(
         annotations=ToolAnnotations(
@@ -154,8 +154,8 @@ def create_server() -> FastMCP:
                 properties=properties,
                 expected_revision=expected_revision,
             )
-        except InkscapeError as e:
-            return _to_error(e)
+        except InkscapeError:
+            raise
 
     @mcp.tool(
         annotations=ToolAnnotations(
@@ -176,8 +176,8 @@ def create_server() -> FastMCP:
                 document_path=document_path,
                 object_ids=object_ids,
             )
-        except InkscapeError as e:
-            return _to_error(e)
+        except InkscapeError:
+            raise
 
     @mcp.tool(
         annotations=ToolAnnotations(
@@ -211,8 +211,8 @@ def create_server() -> FastMCP:
                 object_ids=object_ids,
                 expected_revision=expected_revision,
             )
-        except InkscapeError as e:
-            return _to_error(e)
+        except InkscapeError:
+            raise
 
     @mcp.tool(
         annotations=ToolAnnotations(
@@ -234,8 +234,8 @@ def create_server() -> FastMCP:
                 document_path=document_path,
                 width=width, height=height,
             )
-        except InkscapeError as e:
-            return _to_error(e)
+        except InkscapeError:
+            raise
 
     @mcp.tool(
         annotations=ToolAnnotations(
@@ -265,8 +265,8 @@ def create_server() -> FastMCP:
                 action_params=action_params,
                 expected_revision=expected_revision,
             )
-        except InkscapeError as e:
-            return _to_error(e)
+        except InkscapeError:
+            raise
 
     # ═══════════════════════════════════════════
     #  Resources
@@ -305,13 +305,8 @@ def create_server() -> FastMCP:
                 session_mgr, config,
                 document_path=document_path,
             )
-            if result.get("isError"):
-                return str(result.get("content", [{}])[0].get("text", "Preview error"))
-            for item in result.get("content", []):
-                if item.get("type") == "image":
-                    return item.get("data", "")
-            sc = result.get("structuredContent", {})
-            preview_path = sc.get("preview_resource", "")
+            # tool now returns the structured payload directly (RenderPreviewStructured)
+            preview_path = result.get("preview_resource", "")
             return str(preview_path) if preview_path else "Preview unavailable"
         except InkscapeError as e:
             return str(e)
