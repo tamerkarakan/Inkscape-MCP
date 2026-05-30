@@ -300,6 +300,25 @@ async def tool_element_create(
         else:
             raise InkscapeError(f"Unsupported element_type: {element_type}")
 
+        # Generic attribute pass-through (fixes silent attribute dropping):
+        # apply any property the type-branch above did NOT already set —
+        # hyphenated names and extra styles (font-size, stroke-width,
+        # stroke-linecap, letter-spacing, text-anchor, font-weight, opacity,
+        # transform, ...). Only fills gaps; never overrides branch output.
+        # Weak/low-context clients rely on element_create alone, so nothing
+        # passed must be silently dropped.
+        _passthrough_map = {
+            "stroke_width": "stroke-width",
+            "font_family": "font-family",
+            "font_size": "font-size",
+        }
+        for _k, _v in properties.items():
+            if _k in ("id", "text"):
+                continue
+            _attr = _passthrough_map.get(_k, _k)
+            if elem.get(_attr) is None:
+                elem.set(_attr, str(_v))
+
         # Serialize and atomically write
         new_svg = etree.tostring(
             tree,
@@ -511,6 +530,9 @@ async def tool_export(
 
     # Build output path (server generates, Madde 8)
     safe_name = "".join(c for c in output_name if c.isalnum() or c in "._-")
+    # Avoid double extension if output_name already ends with .<format>
+    if safe_name.lower().endswith("." + export_format.lower()):
+        safe_name = safe_name[: -(len(export_format) + 1)]
     output_path = config.workspace_root / f"{safe_name}.{export_format}"
 
     async with state.lock:
@@ -972,6 +994,9 @@ async def tool_gui_export(
         )
 
     safe_name = "".join(c for c in output_name if c.isalnum() or c in "._-")
+    # Avoid double extension if output_name already ends with .<format>
+    if safe_name.lower().endswith("." + export_format.lower()):
+        safe_name = safe_name[: -(len(export_format) + 1)]
     output_path = config.workspace_root / f"{safe_name}.{export_format}"
 
     session = await gui_mgr.get_or_start(app_id, svg_path)
@@ -1241,4 +1266,29 @@ def tool_workspace_info(config) -> dict:
     return _success(
         [{"type": "text", "text": f"workspace: {ws}"}],
         {"workspace_path": str(ws), "files": files, "note": note},
+    )
+
+
+async def tool_write_svg(
+    session_mgr: SessionManager,
+    config: SecurityConfig,
+    doc_name: str,
+    svg_content: str,
+) -> dict:
+    """Author a full SVG in one call (validated well-formed XML, saved to workspace)."""
+    workspace = config.workspace_root
+    safe_name = "".join(c for c in doc_name if c.isalnum() or c in "._-")
+    file_path = workspace / f"{safe_name}.svg"
+
+    try:
+        etree.fromstring(svg_content.encode("utf-8"))
+    except Exception as exc:
+        raise InkscapeError(f"Invalid SVG XML: {exc}")
+
+    atomic_write_svg(file_path, svg_content, config)
+    session_mgr.register_new(file_path, revision=1)
+
+    return _success(
+        [{"type": "text", "text": f"SVG written: {file_path.name}"}],
+        {"document_path": str(file_path), "file_name": file_path.name, "revision": 1},
     )

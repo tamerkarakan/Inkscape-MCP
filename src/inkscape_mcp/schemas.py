@@ -280,3 +280,14 @@ class WorkspaceInfoStructured(TypedDict):
     workspace_path: str
     files: list[str]
     note: str
+
+
+# ── write_svg ──
+
+
+class WriteSvgStructured(TypedDict):
+    """Structured result for write_svg."""
+
+    document_path: str
+    file_name: str
+    revision: int

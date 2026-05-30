@@ -51,7 +51,8 @@ class TestServerCreation:
         assert "trace_bitmap" in tools
         assert "ask_user" in tools
         assert "workspace_info" in tools
-        assert len(tools) == 15
+        assert "write_svg" in tools
+        assert len(tools) == 16
 
     def test_resources_registered(self):
         """All required resources are registered (capabilities, doc-info, svg, preview)."""
@@ -86,7 +87,7 @@ class TestServerCreation:
         from inkscape_mcp.server import create_server
         server = create_server()
         tools = server._tool_manager.list_tools()
-        assert len(tools) == 15, f"Expected 15 tools, got {len(tools)}"
+        assert len(tools) == 16, f"Expected 16 tools, got {len(tools)}"
         # render_preview returns an inline FastMCP Image (not structured data),
         # so it intentionally has no output_schema.
         no_schema_ok = {"render_preview"}

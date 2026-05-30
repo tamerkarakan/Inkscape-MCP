@@ -39,6 +39,7 @@ from .tools import (
     tool_trace_bitmap,
     tool_ask_user,
     tool_workspace_info,
+    tool_write_svg,
 )
 from .gui_session import GuiSessionManager
 from .resources import (
@@ -63,6 +64,7 @@ from .schemas import (
     TraceBitmapStructured as TraceBitmapResult,
     AskUserStructured as AskUserResult,
     WorkspaceInfoStructured as WorkspaceInfoResult,
+    WriteSvgStructured as WriteSvgResult,
 )
 
 
@@ -473,6 +475,32 @@ def create_server() -> FastMCP:
     async def workspace_info() -> WorkspaceInfoResult:
         """Get the MCP working directory: where to put input files and find outputs."""
         return tool_workspace_info(config)
+
+    @mcp.tool(
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
+    async def write_svg(
+        doc_name: str,
+        svg_content: str,
+    ) -> WriteSvgResult:
+        """Author a full SVG document in one call (validated, saved to workspace).
+
+        Fast path for capable clients: emit the whole SVG at once instead of
+        many element_create calls. element_create remains for incremental edits
+        and weak/low-context clients.
+        """
+        try:
+            return await tool_write_svg(
+                session_mgr, config,
+                doc_name=doc_name, svg_content=svg_content,
+            )
+        except InkscapeError:
+            raise
 
     # ═══════════════════════════════════════════
     #  Resources
