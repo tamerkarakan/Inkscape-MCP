@@ -139,7 +139,14 @@ def create_server() -> FastMCP:
         view_box: str | None = None,
         doc_name: str = "document",
     ) -> DocumentCreateResult:
-        """Create a new empty SVG document via DOM (no Inkscape CLI)."""
+        """Create a new empty SVG document and return its {document_path}.
+
+        width/height are the canvas size in user units. view_box defaults to
+        "0 0 width height"; pass it explicitly to decouple the coordinate system
+        from the pixel size. Use the returned document_path in every later call
+        (element_create, render_preview, export_document, ...). Files land in the
+        workspace (see workspace_info).
+        """
         try:
             return await tool_document_create(
                 session_mgr, config,
@@ -164,10 +171,30 @@ def create_server() -> FastMCP:
         expected_revision: int | None = None,
         before_id: str | None = None,
     ) -> ElementCreateResult:
-        """Create a new SVG element (rect, circle, ellipse, path, text) via DOM.
+        """Create one SVG element via DOM and return its generated id.
 
-        Appends on top by default; pass before_id to insert directly beneath an
-        existing element (z-order control).
+        element_type + the keys to put in `properties` (units = user units):
+          - "rect":    x, y, width, height; optional rx, ry (corner radius)
+          - "circle":  cx, cy, r
+          - "ellipse": cx, cy, rx, ry  (use this for ovals — no arc-path needed)
+          - "path":    d  (an SVG path data string, e.g. "M10 10 L90 90 Z")
+          - "text":    x, y, text; optional font_family, font_size
+
+        Paint/style keys work on any type: fill, stroke, stroke_width, opacity,
+        fill_opacity, stroke_opacity, stroke_dasharray, stroke_linecap,
+        stroke_linejoin, transform, ... Both snake_case (stroke_width) and the
+        raw SVG hyphen name (stroke-width) are accepted; any key not consumed by
+        the type above passes straight through to the SVG attribute, so nothing
+        is silently dropped. fill/stroke take a CSS color ("#ff0000", "red") or
+        "url(#id)" from create_gradient/create_pattern, or "none".
+
+        Example: element_create(document_path=..., element_type="rect",
+          properties={"x":10,"y":10,"width":80,"height":40,"rx":6,
+                      "fill":"#3366cc","stroke":"black","stroke_width":2})
+
+        Appends on top (end of document = highest z-order) by default. Pass
+        before_id to insert this element directly BENEATH an existing one
+        (e.g. a shadow under a shape); see reorder_element to restack later.
         """
         try:
             return await tool_element_create(
@@ -195,7 +222,14 @@ def create_server() -> FastMCP:
         properties: dict[str, Any],
         expected_revision: int | None = None,
     ) -> ElementUpdateResult:
-        """Update properties of existing SVG element via DOM (Madde 12)."""
+        """Change attributes of an existing element (found by object_id) via DOM.
+
+        `properties` uses the SAME keys as element_create: geometry (x, y, width,
+        height, cx, cy, r, rx, ry, d, text, ...) and paint/style (fill, stroke,
+        stroke_width, opacity, transform, "url(#id)" fills, ...). Only the keys
+        you pass are changed; others are left as-is. snake_case and hyphenated
+        SVG names both work; unknown keys pass through to the attribute.
+        """
         try:
             return await tool_element_update(
                 session_mgr, config,
@@ -303,9 +337,22 @@ def create_server() -> FastMCP:
         expected_revision: int | None = None,
         ctx: Context = None,
     ) -> RunActionsResult:
-        """Run a headless-safe Inkscape action (path ops, set_attribute, transform).
+        """Run a headless-safe Inkscape action on existing elements.
 
-        id-changing operations return an id_map {survived, destroyed, created}.
+        operation + how object_ids / action_params are used:
+          - "path_union" / "path_difference" / "path_intersection" /
+            "path_exclusion": boolean-combine 2+ paths in object_ids into one
+            new path (order matters for difference). DESTRUCTIVE — the inputs
+            are consumed; may prompt the user to confirm.
+          - "set_attribute": set one attribute on object_ids[0];
+            action_params={"attribute": <name>, "value": <value>}
+          - "transform_translate": shift object_ids[0] by
+            action_params={"dx": <n>, "dy": <n>} (baked into x/y, not a transform).
+            For scale/rotate/skew use transform_element instead.
+
+        Because path ops change ids, the result includes an id_map
+        {survived, destroyed, created} — read `created` for the new path id.
+        Values may not contain ';' or ':' (action-injection guard).
         """
         try:
             return await tool_run_actions(
@@ -553,7 +600,20 @@ def create_server() -> FastMCP:
         params: dict[str, Any] | None = None,
         expected_revision: int | None = None,
     ) -> TransformElementResult:
-        """Apply translate/scale/rotate/skew_x/skew_y to an element (composes transform)."""
+        """Move/scale/rotate/shear an element; composes onto its transform attr.
+
+        operation + the keys to put in `params`:
+          - "translate": dx, dy                (shift, in user units)
+          - "scale":     sx[, sy]              (sy defaults to sx = uniform;
+                                                give sx≠sy to make an oval from a circle)
+          - "rotate":    angle[, cx, cy]       (degrees; cx,cy = pivot, else origin)
+          - "skew_x":    angle                 (degrees — horizontal shear)
+          - "skew_y":    angle                 (degrees — vertical shear)
+
+        Each call APPENDS to any existing transform (does not replace it), so
+        repeated calls stack. Example: rotate 30° about (50,50):
+          transform_element(..., operation="rotate", params={"angle":30,"cx":50,"cy":50})
+        """
         try:
             return await tool_transform_element(
                 session_mgr, config,
@@ -578,7 +638,17 @@ def create_server() -> FastMCP:
         position: str,
         expected_revision: int | None = None,
     ) -> ReorderElementResult:
-        """Change an element's z-order: position = top | bottom | up | down."""
+        """Restack an element in z-order (paint order = document order).
+
+        position:
+          - "top":    move to front (drawn last, above everything)
+          - "bottom": move to back  (drawn first, behind everything)
+          - "up":     swap forward one step (above the next sibling)
+          - "down":   swap backward one step (below the previous sibling)
+
+        "up"/"down" are no-ops at the respective edge. To insert a NEW element
+        below an existing one in a single call, use element_create(before_id=...).
+        """
         try:
             return await tool_reorder_element(
                 session_mgr, config,
@@ -603,7 +673,23 @@ def create_server() -> FastMCP:
         params: dict[str, Any] | None = None,
         expected_revision: int | None = None,
     ) -> CreateGradientResult:
-        """Define a linear/radial gradient in <defs>; use the returned id as fill='url(#id)'."""
+        """Define a linear/radial gradient in <defs>; returns {gradient_id}.
+
+        Apply it by setting an element's fill (or stroke) to "url(#<gradient_id>)".
+
+        gradient_type: "linear" or "radial".
+        stops: a list of color stops, each a dict:
+          {"offset": 0..1, "color": "#rrggbb"[, "opacity": 0..1]}
+          e.g. [{"offset":0,"color":"#ffffff"},{"offset":1,"color":"#0000ff"}]
+        params (user-space coords, optional):
+          - linear: x1, y1, x2, y2   (gradient axis; default 0,0 → 1,0)
+          - radial: cx, cy, r[, fx, fy]   (center+radius; fx,fy = focal point)
+
+        Example: create_gradient(..., gradient_type="linear",
+          stops=[{"offset":0,"color":"red"},{"offset":1,"color":"yellow"}],
+          params={"x1":0,"y1":0,"x2":200,"y2":0})
+        then element_update(..., properties={"fill":"url(#<gradient_id>)"}).
+        """
         try:
             return await tool_create_gradient(
                 session_mgr, config,
@@ -628,7 +714,20 @@ def create_server() -> FastMCP:
         content_svg: str,
         expected_revision: int | None = None,
     ) -> CreatePatternResult:
-        """Define a tile <pattern> in <defs>; use the returned id as fill='url(#id)'."""
+        """Define a repeating tile <pattern> in <defs>; returns {pattern_id}.
+
+        Apply it by setting an element's fill to "url(#<pattern_id>)".
+
+        width, height: the tile size in user units (the motif repeats every
+          width × height).
+        content_svg: a raw SVG fragment (one or more elements) drawn inside one
+          tile, in tile-local coordinates 0..width / 0..height. No <svg> wrapper.
+          e.g. '<circle cx="5" cy="5" r="3" fill="black"/>'
+
+        Example: create_pattern(..., width=10, height=10,
+          content_svg='<rect width="5" height="5" fill="#ccc"/>')
+        then element_update(..., properties={"fill":"url(#<pattern_id>)"}).
+        """
         try:
             return await tool_create_pattern(
                 session_mgr, config,
