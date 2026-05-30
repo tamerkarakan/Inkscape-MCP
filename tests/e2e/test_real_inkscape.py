@@ -314,3 +314,67 @@ def test_shell_session_state_persistence(inkscape_workspace):
     # The shell output should contain c1 data (state preserved)
     # And the fill change should be reflected in query output
     assert "c1" in result.stdout
+
+
+# ── T-4: PDF export + path_difference E2E ──
+
+
+def test_export_pdf(inkscape_workspace):
+    """Export SVG to PDF headless."""
+    import subprocess
+
+    svg_path = inkscape_workspace / "input.svg"
+    pdf_path = inkscape_workspace / "output.pdf"
+
+    # PDF export uses --export-filename + --export-type (no export-do needed)
+    result = subprocess.run(
+        [
+            INKSCAPE_BIN,
+            f"--export-filename={pdf_path}",
+            "--export-type=pdf",
+            str(svg_path),
+        ],
+        capture_output=True, text=True, timeout=60,
+    )
+
+    assert pdf_path.exists(), f"PDF not created. stderr: {result.stderr[:500]}"
+    assert pdf_path.stat().st_size > 0
+
+
+def test_path_difference_operation(inkscape_workspace):
+    """Path difference: r1 minus c1, verify c1 is destroyed."""
+    import subprocess
+    from lxml import etree
+
+    import shutil
+    svg_path = inkscape_workspace / "input_diff.svg"
+    shutil.copy(inkscape_workspace / "input.svg", svg_path)
+
+    out_path = inkscape_workspace / "output_diff.svg"
+    # Per-operand pattern: object-to-path each operand, then path-difference
+    actions = (
+        "select-clear;select-by-id:r1;object-to-path;"
+        "select-clear;select-by-id:c1;object-to-path;"
+        "select-clear;select-by-id:r1;select-by-id:c1;path-difference;"
+        f"export-filename:{out_path};export-type:svg;export-do"
+    )
+    subprocess.run(
+        [INKSCAPE_BIN, f"--actions={actions}", str(svg_path)],
+        capture_output=True, text=True, timeout=30,
+    )
+
+    assert out_path.exists(), "Path-difference output not created"
+
+    tree = etree.parse(str(out_path))
+    ids_after = {el.get("id") for el in tree.iter() if el.get("id")}
+
+    # r1 should survive (bottom operand)
+    assert "r1" in ids_after, f"r1 should survive, got {ids_after}"
+    # p1 untouched
+    assert "p1" in ids_after
+    # c1 is cut away
+    assert "c1" not in ids_after, f"c1 should be destroyed by path-difference, got {ids_after}"
+
+    # r1 should now be a path element
+    r1_elem = tree.xpath("//*[@id='r1']")[0]
+    assert "path" in r1_elem.tag.lower()

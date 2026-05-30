@@ -52,6 +52,29 @@ class DocumentState:
     last_access: float = field(default_factory=time.time)
 
 
+def _parse_length(value: str) -> float:
+    """Parse SVG length value, stripping unit suffix (px, mm, cm, in, pt, pc).
+
+    Returns value in px (96 dpi). Raises ValueError if unparseable.
+    """
+    import re
+    value = value.strip()
+    unit_map = {
+        "px": 1.0,
+        "mm": 96.0 / 25.4,
+        "cm": 96.0 / 2.54,
+        "in": 96.0,
+        "pt": 96.0 / 72.0,
+        "pc": 96.0 / 6.0,
+    }
+    m = re.match(r"^([+-]?\d*\.?\d+)\s*(px|mm|cm|in|pt|pc)?$", value)
+    if not m:
+        raise ValueError(f"Cannot parse SVG length: {value}")
+    num = float(m.group(1))
+    unit = m.group(2) or "px"
+    return num * unit_map[unit]
+
+
 class SessionManager:
     """Manages per-document sessions with locking and revision tracking."""
 
@@ -95,14 +118,18 @@ class SessionManager:
         return state
 
     def _load_unit_info(self, state: DocumentState) -> None:
-        """Compute px→user-unit conversion from SVG attributes."""
+        """Compute px→user-unit conversion from SVG attributes.
+
+        Handles unit suffixes (e.g., width="200px", width="210mm")
+        and converts to px at 96 dpi.
+        """
         if not state.svg_path.exists():
             return
         try:
             tree = etree.parse(str(state.svg_path))
             root = tree.getroot()
-            w = float(root.get("width", "0"))
-            h = float(root.get("height", "0"))
+            w = _parse_length(root.get("width", "0"))
+            h = _parse_length(root.get("height", "0"))
             vb = root.get("viewBox")
             if vb:
                 parts = vb.split()

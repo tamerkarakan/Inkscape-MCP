@@ -1,5 +1,5 @@
 """
-Inkscape MCP Server — stdio transport entry point.
+Inkscape MCP Server — FastMCP-based entry point.
 
 Usage:
     python -m inkscape_mcp.server
@@ -13,29 +13,38 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Any
 
-from mcp.server import Server
-from mcp.server.stdio import stdio_server
+from mcp.server.fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 
-from .exceptions import (
-    InkscapeError,
-)
+from .exceptions import InkscapeError
 from .security import SecurityConfig
 from .session import SessionManager
 from .tools import (
     tool_document_create,
     tool_element_create,
+    tool_element_update,
     tool_export,
     tool_query,
     tool_render_preview,
     tool_run_actions,
 )
-from .resources import resource_capabilities, resource_document_info
+from .resources import (
+    resource_capabilities,
+    resource_current_svg,
+    resource_document_info,
+)
+from .capabilities import load_capabilities as _load_caps
 
 
-def create_server() -> Server:
-    """Build and configure the MCP server instance."""
-    # ── Configuration ──
+def _get_project_root() -> Path:
+    """Get project root (parent of src/)."""
+    return Path(__file__).resolve().parent.parent.parent
+
+
+def create_server() -> FastMCP:
+    """Build and configure the MCP server."""
     workspace = Path(
         os.environ.get("INKSCAPE_WORKSPACE",
                        str(Path.cwd() / "workspace"))
@@ -48,25 +57,36 @@ def create_server() -> Server:
     )
 
     session_mgr = SessionManager(config)
+    project_root = _get_project_root()
 
-    app = Server("inkscape-mcp")
+    mcp = FastMCP("inkscape-mcp")
+
+    def _to_error(err: InkscapeError) -> dict:
+        return {
+            "content": [{"type": "text", "text": err.detail}],
+            "isError": True,
+            "structuredContent": err.to_dict(),
+        }
 
     # ═══════════════════════════════════════════
     #  Tools
     # ═══════════════════════════════════════════
 
-    @app.tool()
+    @mcp.tool(
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        )
+    )
     async def document_create(
         width: float = 200.0,
         height: float = 200.0,
         view_box: str | None = None,
         doc_name: str = "document",
     ) -> dict:
-        """Create a new empty SVG document.
-
-        The document is created via DOM (lxml) — never through Inkscape CLI.
-        Returns the document path, name, and initial revision.
-        """
+        """Create a new empty SVG document via DOM (no Inkscape CLI)."""
         try:
             return await tool_document_create(
                 session_mgr, config,
@@ -76,24 +96,21 @@ def create_server() -> Server:
         except InkscapeError as e:
             return _to_error(e)
 
-    @app.tool()
+    @mcp.tool(
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        )
+    )
     async def element_create(
         document_path: str,
         element_type: str,
-        properties: dict,
+        properties: dict[str, Any],
         expected_revision: int | None = None,
     ) -> dict:
-        """Create a new SVG element (rect, circle, path, text) via DOM.
-
-        Args:
-            document_path: Path to the SVG document (within workspace).
-            element_type: One of 'rect', 'circle', 'path', 'text'.
-            properties: Element properties (x, y, width, height, fill, stroke, etc.).
-            expected_revision: Optional expected revision for optimistic locking.
-
-        Returns the new element's ID and updated revision.
-        id_preservation: preserving (no existing IDs destroyed).
-        """
+        """Create a new SVG element (rect, circle, path, text) via DOM."""
         try:
             return await tool_element_create(
                 session_mgr, config,
@@ -105,16 +122,45 @@ def create_server() -> Server:
         except InkscapeError as e:
             return _to_error(e)
 
-    @app.tool()
+    @mcp.tool(
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        )
+    )
+    async def element_update(
+        document_path: str,
+        object_id: str,
+        properties: dict[str, Any],
+        expected_revision: int | None = None,
+    ) -> dict:
+        """Update properties of existing SVG element via DOM (Madde 12)."""
+        try:
+            return await tool_element_update(
+                session_mgr, config,
+                document_path=document_path,
+                object_id=object_id,
+                properties=properties,
+                expected_revision=expected_revision,
+            )
+        except InkscapeError as e:
+            return _to_error(e)
+
+    @mcp.tool(
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        )
+    )
     async def query_geometry(
         document_path: str,
         object_ids: list[str] | None = None,
     ) -> dict:
-        """Query object bounding boxes via Inkscape CLI.
-
-        Returns user-unit coordinates (px→user-unit conversion applied internally).
-        All I/O in user-unit space (viewBox coordinates).
-        """
+        """Query object bounding boxes (user-unit coordinates)."""
         try:
             return await tool_query(
                 session_mgr, config,
@@ -124,7 +170,14 @@ def create_server() -> Server:
         except InkscapeError as e:
             return _to_error(e)
 
-    @app.tool()
+    @mcp.tool(
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        )
+    )
     async def export_document(
         document_path: str,
         output_name: str,
@@ -137,10 +190,7 @@ def create_server() -> Server:
         object_ids: list[str] | None = None,
         expected_revision: int | None = None,
     ) -> dict:
-        """Export SVG to PNG, SVG, PDF, or other formats via Inkscape CLI.
-
-        Output is written inside the workspace directory.
-        """
+        """Export SVG to PNG/SVG/PDF via Inkscape CLI."""
         try:
             return await tool_export(
                 session_mgr, config,
@@ -148,26 +198,27 @@ def create_server() -> Server:
                 output_name=output_name,
                 export_format=export_format,
                 dpi=dpi, width=width, height=height,
-                plain_svg=plain_svg,
-                background=background,
+                plain_svg=plain_svg, background=background,
                 object_ids=object_ids,
                 expected_revision=expected_revision,
             )
         except InkscapeError as e:
             return _to_error(e)
 
-    @app.tool()
+    @mcp.tool(
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        )
+    )
     async def render_preview(
         document_path: str,
         width: int = 400,
         height: int | None = None,
     ) -> dict:
-        """Render a PNG preview of the current SVG for visual feedback.
-
-        Returns inline base64-encoded PNG (if under preview size limit)
-        or a resource_link for large previews.
-        preview_available is always returned for mutation tool annotations.
-        """
+        """Render a PNG preview of the current SVG."""
         try:
             return await tool_render_preview(
                 session_mgr, config,
@@ -177,25 +228,24 @@ def create_server() -> Server:
         except InkscapeError as e:
             return _to_error(e)
 
-    @app.tool()
+    @mcp.tool(
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=True,
+            idempotentHint=False,
+            openWorldHint=False,
+        )
+    )
     async def run_actions(
         document_path: str,
         operation: str,
         object_ids: list[str],
-        action_params: dict | None = None,
+        action_params: dict[str, Any] | None = None,
         expected_revision: int | None = None,
     ) -> dict:
-        """Run a headless-safe Inkscape action (escape hatch).
+        """Run a headless-safe Inkscape action (path ops, set_attribute, transform).
 
-        Supported operations: path_union, path_difference, path_intersection,
-        path_exclusion, set_attribute, transform_translate.
-
-        id-changing operations (path_union etc.) return an id_map:
-        {survived: {old→new}, destroyed: [...], created: [...]}
-        (Madde 14/F8).
-
-        All action names are validated against the headless-safe allowlist.
-        GUI actions and unknown actions are rejected.
+        id-changing operations return an id_map {survived, destroyed, created}.
         """
         try:
             return await tool_run_actions(
@@ -213,40 +263,60 @@ def create_server() -> Server:
     #  Resources
     # ═══════════════════════════════════════════
 
-    @app.resource("inkscape://session/capabilities")
+    @mcp.resource("inkscape://session/capabilities")
     def get_capabilities() -> dict:
         """Inkscape capabilities: action list, headless-safe subset."""
-        return resource_capabilities(config)
+        ref = project_root / "reference" / "action-list-full.txt"
+        if ref.exists():
+            return _load_caps(project_root)
+        return {"error": "action-list-full.txt not found", "total_actions": 0}
 
-    @app.resource("inkscape://session/document-info")
-    async def get_document_info(document_path: str) -> dict:
+    @mcp.resource("inkscape://session/document-info/{document_path}")
+    async def get_document_info(document_path: str) -> dict | str:
         """Document info: viewBox, dimensions, conversion factor, revision."""
         try:
             return await resource_document_info(session_mgr, config, document_path)
         except InkscapeError as e:
-            return _to_error(e)
+            return str(e)
 
-    return app
+    @mcp.resource("inkscape://session/svg/{document_path}")
+    async def get_current_svg(document_path: str) -> str:
+        """Current SVG content (raw XML) for the given document."""
+        try:
+            data = await resource_current_svg(session_mgr, config, document_path)
+            return data.decode("utf-8", errors="replace")
+        except InkscapeError as e:
+            return str(e)
 
+    @mcp.resource("inkscape://session/preview/{document_path}")
+    async def get_preview(document_path: str) -> str:
+        """PNG preview resource for the current SVG document."""
+        try:
+            result = await tool_render_preview(
+                session_mgr, config,
+                document_path=document_path,
+            )
+            if result.get("isError"):
+                return result.get("content", [{}])[0].get("text", "Preview error")
+            for item in result.get("content", []):
+                if item.get("type") == "image":
+                    return item.get("data", "")
+            sc = result.get("structuredContent", {})
+            return str(sc.get("preview_resource", "Preview unavailable"))
+        except InkscapeError as e:
+            return str(e)
 
-def _to_error(err: InkscapeError) -> dict:
-    """Convert an InkscapeError to MCP isError result."""
-    return {
-        "content": [{"type": "text", "text": err.detail}],
-        "isError": True,
-        "structuredContent": err.to_dict(),
-    }
+    return mcp
 
 
 async def run() -> None:
     """Run the MCP server over stdio transport."""
     server = create_server()
-    async with stdio_server() as (read_stream, write_stream):
-        await server.run(read_stream, write_stream, server.create_initialization_options())
+    await server.run_stdio_async()
 
 
 def main() -> None:
-    """Entry point for python -m inkscape_mcp.server"""
+    """Entry point."""
     import asyncio
     asyncio.run(run())
 

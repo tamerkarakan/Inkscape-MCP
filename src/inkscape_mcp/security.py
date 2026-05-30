@@ -13,8 +13,9 @@ from .exceptions import InkscapeSecurityError
 
 # Action-name regex: alphanumeric + dots, hyphens, underscores (as in core-actions.txt)
 _ACTION_NAME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9._\-:]*$")
-# Argument regex for safe action args (no shell metacharacters)
-_ACTION_ARG_RE = re.compile(r"^[a-zA-Z0-9._:,=/\- +%#]*$")
+# Argument regex for safe action args (no shell/action-chain metacharacters)
+# ; and : are banned — they would allow action-chain injection (Madde 8)
+_ACTION_ARG_RE = re.compile(r"^[a-zA-Z0-9._,=/\- +%#]*$")
 
 
 @dataclass
@@ -57,31 +58,31 @@ def validate_path(path: Path, config: SecurityConfig) -> Path:
     """Validate that *path* is within workspace_root and safe.
 
     Returns the resolved real path, or raises InkscapeSecurityError.
+    Error messages use sanitized paths — no FS absolute-path leak.
     """
+    workspace = config.workspace_root.resolve(strict=False)
+
     try:
         resolved = path.resolve(strict=False)
     except (OSError, ValueError) as exc:
-        raise InkscapeSecurityError(f"Invalid path: {path}") from exc
-
-    # Resolve workspace root
-    workspace = config.workspace_root.resolve(strict=False)
+        raise InkscapeSecurityError("Invalid path") from exc
 
     # Check path is under workspace
     try:
         resolved.relative_to(workspace)
     except ValueError:
         raise InkscapeSecurityError(
-            f"Path '{path}' is outside workspace. Allowed root: {workspace}"
+            "Path is outside the allowed workspace"
         )
 
     # Symlink/traversal check: real path must stay under workspace
     if resolved.exists() or resolved.parent.exists():
-        real = resolved.resolve(strict=False)
         try:
-            real.relative_to(workspace.resolve(strict=False))
-        except ValueError:
+            real = resolved.resolve(strict=False)
+            real.relative_to(workspace)
+        except (ValueError, OSError):
             raise InkscapeSecurityError(
-                f"Path '{path}' resolves to '{real}' which is outside workspace."
+                "Path resolves outside workspace"
             )
 
     return resolved

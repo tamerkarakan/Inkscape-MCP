@@ -179,6 +179,48 @@ def chain_transform_translate(
     ]
 
 
+def chain_path_difference(*object_ids: str) -> list[tuple[str, str | None]]:
+    """Build action chain for path-difference (per-operand desen, like chain_path_union)."""
+    actions: list[tuple[str, str | None]] = []
+    for oid in object_ids:
+        actions.append(("select-clear", None))
+        actions.append(("select-by-id", oid))
+        actions.append(("object-to-path", None))
+    actions.append(("select-clear", None))
+    for oid in object_ids:
+        actions.append(("select-by-id", oid))
+    actions.append(("path-difference", None))
+    return actions
+
+
+def chain_path_intersection(*object_ids: str) -> list[tuple[str, str | None]]:
+    """Build action chain for path-intersection (per-operand desen)."""
+    actions: list[tuple[str, str | None]] = []
+    for oid in object_ids:
+        actions.append(("select-clear", None))
+        actions.append(("select-by-id", oid))
+        actions.append(("object-to-path", None))
+    actions.append(("select-clear", None))
+    for oid in object_ids:
+        actions.append(("select-by-id", oid))
+    actions.append(("path-intersection", None))
+    return actions
+
+
+def chain_path_exclusion(*object_ids: str) -> list[tuple[str, str | None]]:
+    """Build action chain for path-exclusion (per-operand desen)."""
+    actions: list[tuple[str, str | None]] = []
+    for oid in object_ids:
+        actions.append(("select-clear", None))
+        actions.append(("select-by-id", oid))
+        actions.append(("object-to-path", None))
+    actions.append(("select-clear", None))
+    for oid in object_ids:
+        actions.append(("select-by-id", oid))
+    actions.append(("path-exclusion", None))
+    return actions
+
+
 # ── Action validation for run_actions ──
 
 

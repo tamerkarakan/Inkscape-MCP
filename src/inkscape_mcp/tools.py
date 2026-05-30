@@ -13,7 +13,7 @@ import asyncio
 import os
 import subprocess
 import tempfile
-import time
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -22,11 +22,16 @@ from lxml import etree
 from .actions import (
     chain_export_png,
     chain_export_svg,
+    chain_path_difference,
+    chain_path_exclusion,
+    chain_path_intersection,
     chain_path_union,
     chain_set_attribute,
     chain_transform_translate,
 )
 from .exceptions import (
+    IdDestroyedError,
+    IdNotFoundError,
     InkscapeActionError,
     InkscapeError,
     InkscapeExportError,
@@ -35,6 +40,7 @@ from .exceptions import (
     InkscapeTimeoutError,
     parse_stderr,
 )
+from .security import validate_action_arg
 from .normalize import (
     normalize_document_info,
     normalize_export_result,
@@ -140,43 +146,6 @@ async def _run_inkscape(
         raise InkscapeProcessError(str(exc)) from exc
 
 
-def _run_inkscape_sync(
-    args: list[str],
-    config: SecurityConfig,
-    timeout: int | None = None,
-) -> subprocess.CompletedProcess:
-    """Synchronous version of _run_inkscape."""
-    binary = os.environ.get(
-        "INKSCAPE_BIN",
-        "inkscape.com" if os.name == "nt" else "inkscape",
-    )
-    timeout = timeout or config.default_timeout
-
-    try:
-        result = subprocess.run(
-            [binary] + args,
-            capture_output=True,
-            timeout=timeout,
-            text=False,
-        )
-        # Parse stderr
-        err = parse_stderr(result.stderr.decode("utf-8", errors="replace"))
-        if err:
-            raise err
-        result.stdout = result.stdout.decode("utf-8", errors="replace").encode("utf-8")
-        return result
-    except subprocess.TimeoutExpired:
-        raise InkscapeTimeoutError(
-            f"Inkscape command timed out after {timeout}s"
-        )
-    except FileNotFoundError:
-        raise InkscapeNotFoundError(f"Inkscape binary not found at: {binary}")
-    except InkscapeError:
-        raise
-    except Exception as exc:
-        raise InkscapeProcessError(str(exc)) from exc
-
-
 # ═══════════════════════════════════════════════════════
 #  Tool handlers
 # ═══════════════════════════════════════════════════════
@@ -252,9 +221,8 @@ async def tool_element_create(
         data = read_svg_file(state.svg_path, config)
         tree = etree.fromstring(data)
 
-        # Generate unique ID
-        ts = int(time.time() * 1000) % 100000
-        new_id = f"elem_{element_type}_{ts}"
+        # Generate unique ID (uuid4 — no collision within ~100s window)
+        new_id = f"{element_type}_{uuid.uuid4().hex[:12]}"
 
         ns = "http://www.w3.org/2000/svg"
 
@@ -342,12 +310,110 @@ async def tool_element_create(
         state.revision += 1
         new_rev = state.revision
 
+        # Compute px-equivalent coordinates (F5: user-unit → px for reference)
+        px_coords = {}
+        for coord_key in ("x", "y", "cx", "cy", "r", "width", "height"):
+            if coord_key in properties:
+                px_coords[coord_key] = session_mgr.user_to_px(
+                    state, float(properties[coord_key])
+                )
+
     return _success(
         [{"type": "text", "text": f"{element_type} created with id '{new_id}'"}],
         {
             "element_id": new_id,
             "element_type": element_type,
             "revision": new_rev,
+            "px_coords": px_coords,
+        },
+    )
+
+
+# ── element_update (DOM) ──
+
+
+async def tool_element_update(
+    session_mgr: SessionManager,
+    config: SecurityConfig,
+    document_path: str,
+    object_id: str,
+    properties: dict[str, Any],
+    expected_revision: int | None = None,
+) -> dict:
+    """Update properties of an existing SVG element via DOM (Madde 12)."""
+    svg_path = validate_path(Path(document_path), config)
+    state = await session_mgr.get_or_open(svg_path)
+
+    async with state.lock:
+        # Revision check
+        session_mgr.check_revision(state, expected_revision)
+
+        # Check if ID was destroyed (Madde 14: silinmiş id ≠ stale revision)
+        if object_id in state.destroyed_ids:
+            raise IdDestroyedError(object_id)
+
+        # Read and parse current SVG
+        data = read_svg_file(state.svg_path, config)
+        tree = etree.fromstring(data)
+
+        # Find element by id
+        found = tree.xpath(f"//*[@id='{object_id}']")
+        if not found:
+            raise IdNotFoundError(object_id)
+
+        elem = found[0]
+
+        # Apply property updates
+        for prop_name, prop_value in properties.items():
+            # Map Python snake_case names to SVG attribute names
+            attr_map = {
+                "x": "x",
+                "y": "y",
+                "width": "width",
+                "height": "height",
+                "cx": "cx",
+                "cy": "cy",
+                "r": "r",
+                "rx": "rx",
+                "ry": "ry",
+                "d": "d",
+                "fill": "fill",
+                "stroke": "stroke",
+                "stroke_width": "stroke-width",
+                "font_family": "font-family",
+                "font_size": "font-size",
+                "text": None,  # Text content, not attribute
+                "opacity": "opacity",
+                "transform": "transform",
+            }
+            svg_attr = attr_map.get(prop_name)
+            if svg_attr is None and prop_name == "text":
+                elem.text = str(prop_value)
+            elif svg_attr is not None:
+                elem.set(svg_attr, str(prop_value))
+            else:
+                # Allow raw SVG attribute names as pass-through
+                elem.set(prop_name, str(prop_value))
+
+        # Serialize and atomically write
+        new_svg = etree.tostring(
+            tree,
+            xml_declaration=True,
+            encoding="UTF-8",
+            pretty_print=True,
+        )
+        atomic_write_svg(state.svg_path, new_svg, config)
+
+        # Update revision
+        state.revision += 1
+        new_rev = state.revision
+
+    return _success(
+        [{"type": "text", "text": f"Updated {object_id} ({len(properties)} properties)"}],
+        {
+            "object_id": object_id,
+            "revision": new_rev,
+            "updated_properties": list(properties.keys()),
         },
     )
 
@@ -375,12 +441,12 @@ async def tool_query(
         if object_ids and len(object_ids) > 0:
             # Query specific objects using --query-id + --query-all
             id_args = [f"--query-id={','.join(object_ids)}"]
-            result = _run_inkscape_sync(
+            result = await _run_inkscape(
                 ["--query-all", *id_args, str(state.svg_path)],
                 config,
             )
         else:
-            result = _run_inkscape_sync(
+            result = await _run_inkscape(
                 ["--query-all", str(state.svg_path)],
                 config,
             )
@@ -474,7 +540,7 @@ async def tool_export(
 
         args.append(str(state.svg_path))
 
-        _run_inkscape_sync(args, config, timeout=config.export_timeout)
+        await _run_inkscape(args, config, timeout=config.export_timeout)
 
     # Check output
     if not output_path.exists():
@@ -522,7 +588,7 @@ async def tool_render_preview(
             action_str = ";".join(
                 f"{name}:{arg}" if arg else name for name, arg in actions
             )
-            _run_inkscape_sync(
+            await _run_inkscape(
                 ["--actions=" + action_str, str(state.svg_path)],
                 config,
                 timeout=config.export_timeout,
@@ -591,6 +657,16 @@ async def tool_run_actions(
     if operation not in allowed_ops:
         raise InkscapeActionError(operation, f"Unknown operation: {operation}")
 
+    # ── P0-2: Argüman enjeksiyonu koruması ──
+    # object_ids ve action_params kullanıcı girdisi — ; ve : karakterleri
+    # action zinciri enjeksiyonuna yol açar. validate_action_arg ile reddet.
+    for oid in object_ids:
+        validate_action_arg(oid)
+    if action_params:
+        for key, val in action_params.items():
+            validate_action_arg(key)
+            validate_action_arg(str(val))
+
     # Check destructive policy
     destructive_ops = {"path_union", "path_difference", "path_intersection",
                        "path_exclusion"}
@@ -601,6 +677,11 @@ async def tool_run_actions(
     async with state.lock:
         session_mgr.check_revision(state, expected_revision)
 
+        # Check if any target ID was destroyed (Madde 14: silinmiş-id kontrolü)
+        for oid in object_ids:
+            if oid in state.destroyed_ids:
+                raise IdDestroyedError(oid, operation)
+
         # Collect IDs before operation
         data = read_svg_file(state.svg_path, config)
         tree_before = etree.fromstring(data)
@@ -609,26 +690,11 @@ async def tool_run_actions(
         if operation == "path_union":
             actions = chain_path_union(*object_ids)
         elif operation == "path_difference":
-            from .actions import select_by_id
-            actions = select_by_id(
-                [("object-to-path", None), ("object-to-path", None),
-                 ("path-difference", None)],
-                *object_ids,
-            )
+            actions = chain_path_difference(*object_ids)
         elif operation == "path_intersection":
-            from .actions import select_by_id
-            actions = select_by_id(
-                [("object-to-path", None), ("object-to-path", None),
-                 ("path-intersection", None)],
-                *object_ids,
-            )
+            actions = chain_path_intersection(*object_ids)
         elif operation == "path_exclusion":
-            from .actions import select_by_id
-            actions = select_by_id(
-                [("object-to-path", None), ("object-to-path", None),
-                 ("path-exclusion", None)],
-                *object_ids,
-            )
+            actions = chain_path_exclusion(*object_ids)
         elif operation == "set_attribute":
             if not action_params:
                 raise InkscapeActionError("set_attribute", "action_params required")

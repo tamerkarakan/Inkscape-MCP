@@ -3,6 +3,8 @@ MCP Resource definitions: exposes session state as read-only resources.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 from .capabilities import load_capabilities
 from .security import SecurityConfig
 from .session import SessionManager
@@ -43,6 +45,10 @@ async def resource_document_info(
     )
 
 
-def resource_capabilities(config: SecurityConfig) -> dict:
-    """Return capabilities document (action list, headless-safe subset)."""
-    return load_capabilities(config.workspace_root)
+def resource_capabilities(project_root: Path) -> dict:
+    """Return capabilities document (action list, headless-safe subset).
+
+    Reads from reference/action-list-full.txt shipped with the server,
+    NOT from the workspace directory.
+    """
+    return load_capabilities(project_root)
