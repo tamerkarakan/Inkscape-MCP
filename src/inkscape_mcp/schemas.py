@@ -232,3 +232,29 @@ class GuiCloseStructured(TypedDict):
 
     app_id: str
     status: str
+
+
+# ── import_image ──
+
+
+class ImportImageStructured(TypedDict):
+    """Structured result for import_image tool."""
+
+    element_id: str
+    element_type: str
+    revision: int
+    width: float
+    height: float
+
+
+# ── trace_bitmap ──
+
+
+class TraceBitmapStructured(TypedDict):
+    """Result from tracing an embedded <image> into <path> geometry."""
+
+    operation: str
+    revision: int
+    image_id: str
+    id_preservation: str
+    id_map: IdMap

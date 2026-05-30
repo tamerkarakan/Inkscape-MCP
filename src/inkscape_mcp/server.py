@@ -33,6 +33,8 @@ from .tools import (
     tool_gui_apply,
     tool_gui_export,
     tool_gui_close,
+    tool_import_image,
+    tool_trace_bitmap,
 )
 from .gui_session import GuiSessionManager
 from .resources import (
@@ -53,6 +55,8 @@ from .schemas import (
     GuiApplyStructured as GuiApplyResult,
     GuiExportStructured as GuiExportResult,
     GuiCloseStructured as GuiCloseResult,
+    ImportImageStructured as ImportImageResult,
+    TraceBitmapStructured as TraceBitmapResult,
 )
 
 
@@ -359,6 +363,72 @@ def create_server() -> FastMCP:
         """Close the live GUI window for the document (terminate the session)."""
         try:
             return await tool_gui_close(gui_mgr, config, document_path=document_path)
+        except InkscapeError:
+            raise
+
+    # ═══════════════════════════════════════════
+    #  Image tools (raster import + trace-bitmap)
+    # ═══════════════════════════════════════════
+
+    @mcp.tool(
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
+    async def import_image(
+        document_path: str,
+        image_path: str,
+        x: float = 0.0,
+        y: float = 0.0,
+        width: float | None = None,
+        height: float | None = None,
+        expected_revision: int | None = None,
+    ) -> ImportImageResult:
+        """Embed a raster image (PNG/JPG/GIF/WEBP) into the SVG via DOM."""
+        try:
+            return await tool_import_image(
+                session_mgr, config,
+                document_path=document_path, image_path=image_path,
+                x=x, y=y, width=width, height=height,
+                expected_revision=expected_revision,
+            )
+        except InkscapeError:
+            raise
+
+    @mcp.tool(
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=True,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
+    async def trace_bitmap(
+        document_path: str,
+        image_id: str,
+        scans: int = 2,
+        smooth: bool = False,
+        stack: bool = True,
+        remove_background: bool = False,
+        speckles: int = 2,
+        smooth_corners: float = 1.0,
+        optimize: bool = True,
+        remove_source: bool = False,
+        expected_revision: int | None = None,
+    ) -> TraceBitmapResult:
+        """Trace an embedded <image> into <path> geometry (Inkscape object-trace)."""
+        try:
+            return await tool_trace_bitmap(
+                session_mgr, config,
+                document_path=document_path, image_id=image_id,
+                scans=scans, smooth=smooth, stack=stack,
+                remove_background=remove_background, speckles=speckles,
+                smooth_corners=smooth_corners, optimize=optimize,
+                remove_source=remove_source, expected_revision=expected_revision,
+            )
         except InkscapeError:
             raise
 

@@ -1011,3 +1011,141 @@ async def tool_gui_close(
             "status": "closed" if closed else "not_open",
         },
     )
+
+
+# ═══════════════════════════════════════════════════════
+#  Image tools (raster import + trace-bitmap fallback)
+# ═══════════════════════════════════════════════════════
+
+
+async def tool_import_image(
+    session_mgr: SessionManager,
+    config: SecurityConfig,
+    document_path: str,
+    image_path: str,
+    x: float = 0.0,
+    y: float = 0.0,
+    width: float | None = None,
+    height: float | None = None,
+    expected_revision: int | None = None,
+) -> dict:
+    """Embed a raster (PNG/JPG/GIF/WEBP) into the SVG as <image> via DOM."""
+    import base64
+    svg_path = validate_path(Path(document_path), config)
+    img_path = validate_path(Path(image_path), config)
+    if not img_path.exists():
+        raise InkscapeError(f"Image file not found: {img_path}")
+    suffix = img_path.suffix.lower()
+    mime_map = {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".gif": "image/gif",
+        ".webp": "image/webp",
+    }
+    mime = mime_map.get(suffix)
+    if mime is None:
+        raise InkscapeError(f"Unsupported image type: {suffix}")
+    if width is None:
+        width = 100.0
+    if height is None:
+        height = 100.0
+    img_bytes = img_path.read_bytes()
+    b64 = base64.b64encode(img_bytes).decode("ascii")
+    data_uri = f"data:{mime};base64,{b64}"
+    state = await session_mgr.get_or_open(svg_path)
+    async with state.lock:
+        session_mgr.check_revision(state, expected_revision)
+        data = read_svg_file(state.svg_path, config)
+        tree = etree.fromstring(data)
+        new_id = f"image_{uuid.uuid4().hex[:12]}"
+        ns = "http://www.w3.org/2000/svg"
+        elem = etree.SubElement(tree, f"{{{ns}}}image")
+        elem.set("id", new_id)
+        elem.set("x", str(x))
+        elem.set("y", str(y))
+        elem.set("width", str(width))
+        elem.set("height", str(height))
+        xlink_ns = "http://www.w3.org/1999/xlink"
+        elem.set(f"{{{xlink_ns}}}href", data_uri)
+        new_svg = etree.tostring(tree, xml_declaration=True, encoding="UTF-8", pretty_print=True)
+        atomic_write_svg(state.svg_path, new_svg, config)
+        new_rev = session_mgr.increment_revision(state)
+    return _success(
+        [{"type": "text", "text": f"Image embedded with id '{new_id}'"}],
+        {"element_id": new_id, "element_type": "image", "revision": new_rev, "width": float(width), "height": float(height)},
+    )
+
+
+async def tool_trace_bitmap(
+    session_mgr: SessionManager,
+    config: SecurityConfig,
+    document_path: str,
+    image_id: str,
+    scans: int = 2,
+    smooth: bool = False,
+    stack: bool = True,
+    remove_background: bool = False,
+    speckles: int = 2,
+    smooth_corners: float = 1.0,
+    optimize: bool = True,
+    remove_source: bool = False,
+    expected_revision: int | None = None,
+) -> dict:
+    """Trace an embedded <image> into <path> geometry (Inkscape object-trace)."""
+    svg_path = validate_path(Path(document_path), config)
+    validate_action_arg(image_id)
+    state = await session_mgr.get_or_open(svg_path)
+    async with state.lock:
+        session_mgr.check_revision(state, expected_revision)
+
+        data = read_svg_file(state.svg_path, config)
+        tree_before = etree.fromstring(data)
+        ids_before = session_mgr.collect_ids(tree_before)
+
+        trace_args = f"{int(scans)},{int(bool(smooth))},{int(bool(stack))},{int(bool(remove_background))},{int(speckles)},{float(smooth_corners)},{int(bool(optimize))}"
+        actions = [("select-by-id", image_id), ("object-trace", trace_args)]
+
+        import tempfile as tmpmod
+        fd, tmp_name = tmpmod.mkstemp(dir=str(state.svg_path.parent), prefix=".inkscape_tmp_", suffix=".svg")
+        os.close(fd)
+        tmp_path = Path(tmp_name)
+        try:
+            export_actions = [("export-filename", str(tmp_path)), ("export-type", "svg"), ("export-do", None)]
+            all_actions = list(actions) + export_actions
+            action_str = ";".join(f"{name}:{arg}" if arg else name for name, arg in all_actions)
+            await _run_inkscape(["--actions=" + action_str, str(state.svg_path)], config, timeout=config.export_timeout)
+            if not tmp_path.exists():
+                raise InkscapeActionError("trace_bitmap", "Export produced no output")
+            data_after = tmp_path.read_bytes()
+        finally:
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+        tree_after = etree.fromstring(data_after)
+        ids_after = session_mgr.collect_ids(tree_after)
+        id_map = session_mgr.diff_ids(ids_before, ids_after)
+
+        if not id_map["created"]:
+            raise InkscapeActionError("trace_bitmap", "produced no geometry (check image_id or trace params)")
+
+        if remove_source:
+            tree_after = etree.fromstring(data_after)
+            found = tree_after.xpath(f"//*[@id='{image_id}']")
+            if found:
+                el = found[0]
+                el.getparent().remove(el)
+                data_after = etree.tostring(tree_after, xml_declaration=True, encoding="UTF-8", pretty_print=True)
+                tree_after = etree.fromstring(data_after)
+                ids_after = session_mgr.collect_ids(tree_after)
+                id_map = session_mgr.diff_ids(ids_before, ids_after)
+
+        atomic_write_svg(state.svg_path, data_after, config)
+        state.destroyed_ids.update(id_map["destroyed"])
+        new_rev = session_mgr.increment_revision(state)
+        id_preservation = "changing" if (id_map["destroyed"] or id_map["created"]) else "preserving"
+        return _success(
+            [{"type": "text", "text": f"trace_bitmap on '{image_id}': created {len(id_map['created'])} path(s). revision={new_rev}"}],
+            {"operation": "trace_bitmap", "revision": new_rev, "image_id": image_id, "id_preservation": id_preservation, "id_map": id_map}
+        )
