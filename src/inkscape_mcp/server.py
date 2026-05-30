@@ -16,7 +16,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from mcp.server.fastmcp import Context, FastMCP
+from mcp.server.fastmcp import Context, FastMCP, Image
 from mcp.types import ToolAnnotations
 
 from .exceptions import InkscapeError
@@ -29,6 +29,7 @@ from .tools import (
     tool_export,
     tool_query,
     tool_render_preview,
+    _render_preview_png,
     tool_run_actions,
     tool_gui_open,
     tool_gui_apply,
@@ -243,8 +244,8 @@ def create_server() -> FastMCP:
         document_path: str,
         width: int = 400,
         height: int | None = None,
-    ) -> RenderPreviewResult:
-        """Render a PNG preview of the current SVG."""
+    ) -> Image:
+        """Render a PNG preview of the current SVG (returned as an inline image)."""
         try:
             return await tool_render_preview(
                 session_mgr, config,
@@ -492,13 +493,11 @@ def create_server() -> FastMCP:
     async def get_preview(document_path: str) -> str:
         """PNG preview resource (base64) for the current SVG document."""
         try:
-            result = await tool_render_preview(
-                session_mgr, config,
-                document_path=document_path,
+            png_data, _revision = await _render_preview_png(
+                session_mgr, config, document_path=document_path,
             )
-            # tool now returns the structured payload directly (RenderPreviewStructured)
-            preview_path = result.get("preview_resource", "")
-            return str(preview_path) if preview_path else "Preview unavailable"
+            import base64
+            return base64.b64encode(png_data).decode()
         except InkscapeError as e:
             return str(e)
 

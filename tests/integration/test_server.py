@@ -86,7 +86,12 @@ class TestServerCreation:
         server = create_server()
         tools = server._tool_manager.list_tools()
         assert len(tools) == 14, f"Expected 14 tools, got {len(tools)}"
+        # render_preview returns an inline FastMCP Image (not structured data),
+        # so it intentionally has no output_schema.
+        no_schema_ok = {"render_preview"}
         for t in tools:
+            if t.name in no_schema_ok:
+                continue
             assert t.output_schema is not None, (
                 f"Tool '{t.name}' has output_schema=None — "
                 f"return type annotation missing or not TypedDict"

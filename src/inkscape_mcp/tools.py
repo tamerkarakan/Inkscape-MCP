@@ -19,6 +19,7 @@ from typing import Any
 
 from lxml import etree
 from pydantic import BaseModel, Field
+from mcp.server.fastmcp import Image
 
 from .actions import (
     chain_export_png,
@@ -560,16 +561,16 @@ async def tool_export(
 # ── render_preview (Inkscape CLI) ──
 
 
-async def tool_render_preview(
+async def _render_preview_png(
     session_mgr: SessionManager,
     config: SecurityConfig,
     document_path: str,
     width: int = 400,
     height: int | None = None,
-) -> dict:
-    """Render a PNG preview of the current SVG.
+) -> tuple[bytes, int]:
+    """Render the current SVG to PNG bytes. Returns (png_bytes, revision).
 
-    Returns image content inline or resource_link (Madde 11).
+    Shared core used by both the render_preview tool and the preview resource.
     """
     svg_path = validate_path(Path(document_path), config)
     state = await session_mgr.get_or_open(svg_path)
@@ -595,40 +596,31 @@ async def tool_render_preview(
             )
 
             png_data = tmp_png.read_bytes()
-
-            # Size check: if exceeds max_preview_bytes, return resource_link
-            if len(png_data) > config.max_preview_bytes:
-                return _success(
-                    [{"type": "text", "text": "Preview too large; use resource link"}],
-                    {
-                        "preview_available": True,
-                        "preview_size": len(png_data),
-                        "preview_resource": f"inkscape://session/{state.svg_path.stem}/preview",
-                    },
-                )
-
-            import base64
-            b64 = base64.b64encode(png_data).decode()
-
-            return _success(
-                [
-                    {
-                        "type": "image",
-                        "data": b64,
-                        "mimeType": "image/png",
-                    }
-                ],
-                {
-                    "preview_available": True,
-                    "preview_size": len(png_data),
-                    "revision": state.revision,
-                },
-            )
+            return png_data, state.revision
         finally:
             try:
                 tmp_png.unlink(missing_ok=True)
             except OSError:
                 pass
+
+
+async def tool_render_preview(
+    session_mgr: SessionManager,
+    config: SecurityConfig,
+    document_path: str,
+    width: int = 400,
+    height: int | None = None,
+) -> Image:
+    """Render a PNG preview of the current SVG and return it as an inline image.
+
+    Returns a FastMCP Image so the client actually RECEIVES the PNG. (The prior
+    `_success`-based path returned only structured metadata and silently dropped
+    the image content — broken for the tool's whole purpose.)
+    """
+    png_data, _revision = await _render_preview_png(
+        session_mgr, config, document_path, width=width, height=height
+    )
+    return Image(data=png_data, format="png")
 
 
 # ── run_actions (Inkscape CLI escape hatch) ──
