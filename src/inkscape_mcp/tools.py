@@ -211,6 +211,7 @@ async def tool_element_create(
     element_type: str,
     properties: dict[str, Any],
     expected_revision: int | None = None,
+    before_id: str | None = None,
 ) -> dict:
     """Create a new SVG element via DOM (F3/F4: NO Inkscape CLI for creation)."""
     svg_path = validate_path(Path(document_path), config)
@@ -297,6 +298,14 @@ async def tool_element_create(
                 elem.set("fill", str(properties["fill"]))
             elem.text = str(text)
 
+        elif element_type == "ellipse":
+            elem = etree.SubElement(tree, f"{{{ns}}}ellipse")
+            elem.set("id", new_id)
+            elem.set("cx", str(properties.get("cx", 0)))
+            elem.set("cy", str(properties.get("cy", 0)))
+            elem.set("rx", str(properties.get("rx", 30)))
+            elem.set("ry", str(properties.get("ry", 20)))
+
         else:
             raise InkscapeError(f"Unsupported element_type: {element_type}")
 
@@ -318,6 +327,14 @@ async def tool_element_create(
             _attr = _passthrough_map.get(_k, _k)
             if elem.get(_attr) is None:
                 elem.set(_attr, str(_v))
+
+        # z-order: optionally insert directly BEFORE an existing element
+        # (otherwise the new element stays appended at the end = top z-order).
+        # Lets a client place e.g. a shadow under an already-created shape.
+        if before_id:
+            _t = tree.xpath(f"//*[@id='{before_id}']")
+            if _t:
+                _t[0].addprevious(elem)
 
         # Serialize and atomically write
         new_svg = etree.tostring(
@@ -1291,4 +1308,113 @@ async def tool_write_svg(
     return _success(
         [{"type": "text", "text": f"SVG written: {file_path.name}"}],
         {"document_path": str(file_path), "file_name": file_path.name, "revision": 1},
+    )
+
+
+# ═══════════════════════════════════════════════════════
+#  Transform + z-order (DOM)
+# ═══════════════════════════════════════════════════════
+
+
+async def tool_transform_element(
+    session_mgr: SessionManager,
+    config: SecurityConfig,
+    document_path: str,
+    object_id: str,
+    operation: str,
+    params: dict[str, Any] | None = None,
+    expected_revision: int | None = None,
+) -> dict:
+    """Apply translate/scale/rotate/skew to an element (composes its transform)."""
+    params = params or {}
+    if operation == "translate":
+        t = f"translate({float(params.get('dx',0))},{float(params.get('dy',0))})"
+    elif operation == "scale":
+        sx = float(params.get('sx', 1))
+        sy = float(params.get('sy', sx))
+        t = f"scale({sx},{sy})"
+    elif operation == "rotate":
+        angle = float(params.get('angle', 0))
+        if 'cx' in params and 'cy' in params:
+            t = f"rotate({angle} {float(params['cx'])} {float(params['cy'])})"
+        else:
+            t = f"rotate({angle})"
+    elif operation == "skew_x":
+        t = f"skewX({float(params.get('angle',0))})"
+    elif operation == "skew_y":
+        t = f"skewY({float(params.get('angle',0))})"
+    else:
+        raise InkscapeError(f"Unknown transform operation: {operation}")
+
+    svg_path = validate_path(Path(document_path), config)
+    state = await session_mgr.get_or_open(svg_path)
+    async with state.lock:
+        session_mgr.check_revision(state, expected_revision)
+        if object_id in state.destroyed_ids:
+            raise IdDestroyedError(object_id)
+        data = read_svg_file(state.svg_path, config)
+        tree = etree.fromstring(data)
+        found = tree.xpath(f"//*[@id='{object_id}']")
+        if not found:
+            raise IdNotFoundError(object_id)
+        elem = found[0]
+        existing = elem.get("transform", "").strip()
+        combined = (existing + " " + t).strip() if existing else t
+        elem.set("transform", combined)
+        new_svg = etree.tostring(tree, xml_declaration=True, encoding="UTF-8", pretty_print=True)
+        atomic_write_svg(state.svg_path, new_svg, config)
+        new_rev = session_mgr.increment_revision(state)
+    return _success(
+        [{"type": "text", "text": f"transform {operation} on {object_id}"}],
+        {"object_id": object_id, "revision": new_rev, "transform": combined},
+    )
+
+
+async def tool_reorder_element(
+    session_mgr: SessionManager,
+    config: SecurityConfig,
+    document_path: str,
+    object_id: str,
+    position: str,
+    expected_revision: int | None = None,
+) -> dict:
+    """Change an element's z-order: top | bottom | up | down (DOM reposition)."""
+    if position not in {"top", "bottom", "up", "down"}:
+        raise InkscapeError(f"Unknown position: {position}")
+
+    svg_path = validate_path(Path(document_path), config)
+    state = await session_mgr.get_or_open(svg_path)
+    async with state.lock:
+        session_mgr.check_revision(state, expected_revision)
+        if object_id in state.destroyed_ids:
+            raise IdDestroyedError(object_id)
+        data = read_svg_file(state.svg_path, config)
+        tree = etree.fromstring(data)
+        found = tree.xpath(f"//*[@id='{object_id}']")
+        if not found:
+            raise IdNotFoundError(object_id)
+        elem = found[0]
+        parent = elem.getparent()
+        if parent is None:
+            raise InkscapeError("element has no parent")
+
+        if position == "top":
+            parent.append(elem)
+        elif position == "bottom":
+            parent.insert(0, elem)
+        elif position == "up":
+            nxt = elem.getnext()
+            if nxt is not None:
+                nxt.addnext(elem)
+        elif position == "down":
+            prv = elem.getprevious()
+            if prv is not None:
+                prv.addprevious(elem)
+
+        new_svg = etree.tostring(tree, xml_declaration=True, encoding="UTF-8", pretty_print=True)
+        atomic_write_svg(state.svg_path, new_svg, config)
+        new_rev = session_mgr.increment_revision(state)
+    return _success(
+        [{"type": "text", "text": f"moved {object_id} {position}"}],
+        {"object_id": object_id, "revision": new_rev, "position": position},
     )

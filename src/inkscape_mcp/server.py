@@ -40,6 +40,8 @@ from .tools import (
     tool_ask_user,
     tool_workspace_info,
     tool_write_svg,
+    tool_transform_element,
+    tool_reorder_element,
 )
 from .gui_session import GuiSessionManager
 from .resources import (
@@ -65,6 +67,8 @@ from .schemas import (
     AskUserStructured as AskUserResult,
     WorkspaceInfoStructured as WorkspaceInfoResult,
     WriteSvgStructured as WriteSvgResult,
+    TransformElementStructured as TransformElementResult,
+    ReorderElementStructured as ReorderElementResult,
 )
 
 
@@ -140,8 +144,13 @@ def create_server() -> FastMCP:
         element_type: str,
         properties: dict[str, Any],
         expected_revision: int | None = None,
+        before_id: str | None = None,
     ) -> ElementCreateResult:
-        """Create a new SVG element (rect, circle, path, text) via DOM."""
+        """Create a new SVG element (rect, circle, ellipse, path, text) via DOM.
+
+        Appends on top by default; pass before_id to insert directly beneath an
+        existing element (z-order control).
+        """
         try:
             return await tool_element_create(
                 session_mgr, config,
@@ -149,6 +158,7 @@ def create_server() -> FastMCP:
                 element_type=element_type,
                 properties=properties,
                 expected_revision=expected_revision,
+                before_id=before_id,
             )
         except InkscapeError:
             raise
@@ -498,6 +508,56 @@ def create_server() -> FastMCP:
             return await tool_write_svg(
                 session_mgr, config,
                 doc_name=doc_name, svg_content=svg_content,
+            )
+        except InkscapeError:
+            raise
+
+    @mcp.tool(
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
+    async def transform_element(
+        document_path: str,
+        object_id: str,
+        operation: str,
+        params: dict[str, Any] | None = None,
+        expected_revision: int | None = None,
+    ) -> TransformElementResult:
+        """Apply translate/scale/rotate/skew_x/skew_y to an element (composes transform)."""
+        try:
+            return await tool_transform_element(
+                session_mgr, config,
+                document_path=document_path, object_id=object_id,
+                operation=operation, params=params,
+                expected_revision=expected_revision,
+            )
+        except InkscapeError:
+            raise
+
+    @mcp.tool(
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
+    async def reorder_element(
+        document_path: str,
+        object_id: str,
+        position: str,
+        expected_revision: int | None = None,
+    ) -> ReorderElementResult:
+        """Change an element's z-order: position = top | bottom | up | down."""
+        try:
+            return await tool_reorder_element(
+                session_mgr, config,
+                document_path=document_path, object_id=object_id,
+                position=position, expected_revision=expected_revision,
             )
         except InkscapeError:
             raise

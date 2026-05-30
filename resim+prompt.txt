@@ -1,0 +1,307 @@
+bana inkscape mcp kullanarak bu resimdeki öğeleri çiz kendi svg yeteneklerini kullanma.
+
+Bu işi tamamen Inkscape MCP üzerinden yürüteceğim — kendi elimle SVG dosyası yazmadan, element_create gibi yapılandırılmış MCP araçlarıyla. Önce MCP araçlarının gerçek imzalarını ve element_create'in ne kabul ettiğini netleştireyim (ben mi geometri veriyorum, yoksa yapılandırılmış şekil mi alıyor — bu, "kendi SVG yeteneğini kullanma" kuralına nasıl uyacağımı belirliyor).
+
+
+Found files, used a tool
+Used ToolSearch
+query: select:mcp__inkscape__document_create,mcp__inkscape__element_create,mcp__inkscape__element_update,mcp__inkscape__render_preview,mcp__inkscape__export_document,mcp__inkscape__trace_bitmap,mcp__inkscape__import_image,mcp__inkscape__workspace_info,mcp__inkscape__write_svg,mcp__inkscape__query_geometry,mcp__inkscape__run_actions
+max_results: 15
+Searched
+**/*.py
+pattern: **/*.py
+src\inkscape_mcp\__init__.py
+src\inkscape_mcp\actions.py
+src\inkscape_mcp\capabilities.py
+src\inkscape_mcp\exceptions.py
+src\inkscape_mcp\normalize.py
+src\inkscape_mcp\resources.py
+src\inkscape_mcp\security.py
+tests\__init__.py
+tests\conftest.py
+tests\e2e\__init__.py
+tests\integration\__init__.py
+tests\unit\__init__.py
+tests\unit\test_actions.py
+tests\unit\test_exceptions.py
+tests\unit\test_normalize.py
+tests\unit\test_security.py
+tests\unit\test_session.py
+src\inkscape_mcp\gui_session.py
+src\inkscape_mcp\session.py
+tests\e2e\test_real_inkscape.py
+tests\integration\test_image_tools.py
+tests\integration\test_prompts.py
+tests\integration\test_shutdown.py
+tests\integration\test_elicitation.py
+src\inkscape_mcp\schemas.py
+src\inkscape_mcp\server.py
+src\inkscape_mcp\tools.py
+tests\integration\test_server.py
+element_create yapılandırılmış element alıyor (element_type + properties olarak SVG öznitelikleri) — ama kahve fincanını sadık biçimde kurmak bezier path geometrisi gerektirir, ki bu da benim SVG yeteneğim olur. Senin kuralın ("kendi SVG yeteneklerini kullanma") tam da bunu yasaklıyor.
+
+Projenin felsefesiyle de örtüşüyor (hafızam: Image→vector AI-first; trace-bitmap dumb fallback): bir rasteri benim yorumum olmadan vektöre çevirmenin tek yolu import_image + trace_bitmap — yani Inkscape'in kendi izleyicisi çiziyor. Doğru yol bu.
+
+Tek engel: trace_bitmap diskte bir görüntü dosyası istiyor; senin yapıştırdığın görsel bende sadece görü olarak var, ham bayt dosyası yok. Önce çalışma dizinini ve dosyanın diskte olup olmadığını bulayım.
+
+
+Found files, read a file, used a tool
+Used inkscape: workspace info
+{"workspace_path":"C:\\Users\\tamer\\Codex_Projects\\Inkscape MCP\\workspace","files":["abtest.svg","abtest.svg.inkrev","abtest_out.png","auth_export.svg","auth_export.svg.inkrev","auth_export_out.png","auth_passthrough.svg","auth_passthrough.svg.inkrev","auth_write.svg","auth_write.svg.inkrev","document.svg","document.svg.inkrev","gui_smoke.svg","gui_smoke.svg.inkrev","gui_smoke_out.png","imgtest.svg","imgtest.svg.inkrev","prevtest.svg","prevtest.svg.inkrev","sicak-fincan-cup.png","sicak-fincan-cup.svg","sicak-fincan-cup.svg.inkrev","sicak-fincan-logo.png","sicak-fincan-logo.svg","sicak-fincan-logo.svg.inkrev","sicak-fincan-v2.png","sicak-fincan-v2.svg","sicak-fincan-v2.svg.inkrev","test_import.svg","test_import.svg.inkrev","test_import_ras.png","test_import_v.svg","test_import_v.svg.inkrev","test_trace_path.svg","test_trace_path.svg.inkrev","test_trace_path_ras.png","test_trace_path_v.svg","test_trace_path_v.svg.inkrev","test_trace_remove.svg","test_trace_remove.svg.inkrev","test_trace_remove_ras.png","test_trace_remove_v.svg","test_trace_remove_v.svg.inkrev","tracetest.svg","tracetest.svg.inkrev","tracetest2.svg","tracetest2.svg.inkrev","wstest.svg","wstest.svg.inkrev"],"note":"This is the MCP's working directory. Put any input images you want to import/trace HERE, and all generated files (exports, previews) are saved HERE. Use absolute paths under this directory."}
+Searched
+**/*.{png,jpg,jpeg,webp}
+pattern: **/*.{png,jpg,jpeg,webp}
+workspace\gui_smoke_out.png
+workspace\sicak-fincan-logo.png
+workspace\sicak-fincan-v2.png
+workspace\abtest_out.png
+workspace\auth_export_out.png
+workspace\test_import_ras.png
+workspace\test_trace_path_ras.png
+workspace\test_trace_remove_ras.png
+workspace\sicak-fincan-cup.png
+Read
+tools.py
+şöyle yapalım. trace işini atla. resimdeki öğelerin inkscape ile yapılabilecek olanlarını yap.
+
+Net bir ayrım var, onu netleştireyim — çünkü cevabın ne çizeceğimi tümden değiştiriyor.
+
+Durum: element_create yalnızca rect / circle / path / text destekliyor (ellipse YOK), ve Inkscape'in kendi CLI'ında şekil-oluşturma eylemi hiç yok (hafızam: capability boundary). Yani "Inkscape ile yapılabilecek öğeler", element_create primitifleriyle kurabildiklerim demek. Ama senin önceki kuralın "kendi SVG yeteneğini kullanma" — bir fincanın eğrilerini path d="M..C.." ile yazmak tam da o yeteneğim oluyor. Bu ikisinin kesişimini sen seçmelisin:
+
+Asked
+Kapsam
+questions: [{"question":"Trace'i atladık. Kahve fincanını element_create ile kurarken hangi kapsam? (Görseldeki öğeler: arka plan, tabak, fincan gövdesi+kulp, kahve yüzeyi, köpük kabarcıkları, 2 çekirdek.)","header":"Kapsam","multiSelect":false,"options":[{"label":"Tam fincan (path dahil)","description":"Her şeyi circle/rect/path ile element_create üzerinden kurarım: gövde, kulp, tabak, çekirdekler. Geometriyi ben belirlerim ama tamamı MCP araçlarından geçer — elle SVG dosyası yok, trace yok. Sonuç: tanınır kahve fincanı."},{"label":"Ellipse/circle ile yaklaşık","description":"Tabak, kahve yüzeyi, çekirdekler oval (circle+transform) ile yaklaşıklanır; sadece kulp/gövde gibi zorunlu yerlerde path. Orta düzey benzerlik, daha az 'elle eğri'."},{"label":"Sadece saf primitifler","description":"Yalnız numeric şekiller: arka plan (rect) + köpük kabarcıkları (circle). Hiç bezier/path yok — 'kendi SVG yeteneğimi' sıfır kullanırım. Fincana benzemez ama kapasite sınırını net gösterir."}]}]
+Your questions have been answered: "Trace'i atladık. Kahve fincanını element_create ile kurarken hangi kapsam? (Görseldeki öğeler: arka plan, tabak, fincan gövdesi+kulp, kahve yüzeyi, köpük kabarcıkları, 2 çekirdek.)"="Tam fincan (path dahil)". You can now continue with these answers in mind.
+Trace'i atladık. Kahve fincanını element_create ile kurarken hangi kapsam? (Görseldeki öğeler: arka plan, tabak, fincan gövdesi+kulp, kahve yüzeyi, köpük kabarcıkları, 2 çekirdek.)
+
+Tam fincan (path dahil)
+Seçimin net: tam fincan, hepsi element_create üzerinden (geometriyi ben veriyorum ama elle SVG dosyası yok, trace yok). Hafızam da diyor ki her görsel adımdan sonra render_preview — checkpoint'lerde önizleyip kendimi düzelteceğim.
+
+Önce belgeyi kuruyorum (520×460), sonra arkadan öne doğru element element ekleyeceğim: arka plan → tabak → kulp → gövde → kahve → kabarcıklar → çekirdekler.
+
+Used inkscape: document create
+doc_name: kahve-fincan
+width: 520
+height: 460
+{"document_path":"C:\\Users\\tamer\\Codex_Projects\\Inkscape MCP\\workspace\\kahve-fincan.svg","file_name":"kahve-fincan.svg","revision":1,"width":520,"height":460,"viewBox":"0 0 520.0 460.0"}
+Belge hazır: workspace\kahve-fincan.svg. Şimdi arka plandan başlayıp katman katman ekliyorum.
+
+1/N — Arka plan (rect, şeftali rengi):
+
+Used inkscape: element create
+document_path: C:\Users\tamer\Codex_Projects\Inkscape MCP\workspace\kahve-fincan.svg
+element_type: rect
+properties: {"x":0,"y":0,"width":520,"height":460,"fill":"#F6D6B0"}
+{"element_id":"rect_24b3a96bc401","element_type":"rect","revision":2,"px_coords":{"x":0,"y":0,"width":520,"height":460}}
+2/N — Tabak dış elipsi (path, beyaz + koyu kontur):
+
+Used inkscape: element create
+document_path: C:\Users\tamer\Codex_Projects\Inkscape MCP\workspace\kahve-fincan.svg
+element_type: path
+properties: {"d":"M 65 375 a 180 48 0 1 0 360 0 a 180 48 0 1 0 -360 0 Z","fill":"#FFFFFF","stroke":"#3B2A1E","stroke_width":5}
+{"element_id":"path_a5c92b16a733","element_type":"path","revision":3,"px_coords":{}}
+3/N — Tabak iç halkası (path):
+
+Used inkscape: element create
+document_path: C:\Users\tamer\Codex_Projects\Inkscape MCP\workspace\kahve-fincan.svg
+element_type: path
+properties: {"d":"M 127 368 a 118 28 0 1 0 236 0 a 118 28 0 1 0 -236 0 Z","fill":"#FFFFFF","stroke":"#3B2A1E","stroke_width":3}
+{"element_id":"path_13468aa09882","element_type":"path","revision":4,"px_coords":{}}
+4/N — Kulp (path, gövdeden önce ki gövde ek yerini örtsün):
+
+Used inkscape: element create
+document_path: C:\Users\tamer\Codex_Projects\Inkscape MCP\workspace\kahve-fincan.svg
+element_type: path
+properties: {"d":"M 357 158 C 442 150, 446 245, 350 250 C 408 240, 405 178, 357 158 Z","fill":"#FFFFFF","stroke":"#3B2A1E","stroke_width":5}
+{"element_id":"path_58bfe09ed0ca","element_type":"path","revision":5,"px_coords":{}}
+5/N — Fincan gövdesi (path, ağız elipsi + bardak duvarı):
+
+Used inkscape: element create
+document_path: C:\Users\tamer\Codex_Projects\Inkscape MCP\workspace\kahve-fincan.svg
+element_type: path
+properties: {"d":"M 107 140 C 114 235 152 345 235 352 C 318 345 356 235 363 140 A 128 36 0 0 1 107 140 Z","fill":"#FFFFFF","stroke":"#3B2A1E","stroke_width":5}
+{"element_id":"path_0969555e83e1","element_type":"path","revision":6,"px_coords":{}}
+Ana siluet tamam (tabak + kulp + gövde). İlk checkpoint önizlemesi — devam etmeden kontrol edeyim:
+
+Used inkscape: render preview
+document_path: C:\Users\tamer\Codex_Projects\Inkscape MCP\workspace\kahve-fincan.svg
+width: 420
+İlk önizleme sorunları gösteriyor: (a) ağız köşeleri sivri "boynuz" gibi — bunu birazdan ağız elipsi ekleyince yuvarlanacak; (b) taban fazla sivri (V); (c) kulp küçük ve yüksek kalmış. Önce gövdeyi (daha dolgun kâse + küçük yuvarlak taban) ve kulpu (büyüt + aşağı al) element_update ile düzeltiyorum.
+
+
+Used 2 tools
+6/N — Ağız elipsi (full ellipse — sivri köşeleri yuvarlar, ağzı oluşturur):
+
+Used inkscape: element create
+document_path: C:\Users\tamer\Codex_Projects\Inkscape MCP\workspace\kahve-fincan.svg
+element_type: path
+properties: {"d":"M 107 140 a 128 36 0 1 0 256 0 a 128 36 0 1 0 -256 0 Z","fill":"#FFFFFF","stroke":"#3B2A1E","stroke_width":5}
+{"element_id":"path_ce499e2cc659","element_type":"path","revision":9,"px_coords":{}}
+7/N — Kahve yüzeyi, krema halkası (path, açık kahve):
+
+Used inkscape: element create
+document_path: C:\Users\tamer\Codex_Projects\Inkscape MCP\workspace\kahve-fincan.svg
+element_type: path
+properties: {"d":"M 125 141 a 110 28 0 1 0 220 0 a 110 28 0 1 0 -220 0 Z","fill":"#7A4A2C","stroke":"#3B2A1E","stroke_width":3}
+{"element_id":"path_c2795f58a128","element_type":"path","revision":10,"px_coords":{}}
+8/N — Kahvenin koyu merkezi (path, espresso koyusu):
+
+Used inkscape: element create
+document_path: C:\Users\tamer\Codex_Projects\Inkscape MCP\workspace\kahve-fincan.svg
+element_type: path
+properties: {"d":"M 145 143 a 90 20 0 1 0 180 0 a 90 20 0 1 0 -180 0 Z","fill":"#3E2414"}
+{"element_id":"path_570b94ed5ac8","element_type":"path","revision":11,"px_coords":{}}
+Checkpoint 2 — ağız + kahve eklendi, kontrol:
+
+Used inkscape: render preview
+document_path: C:\Users\tamer\Codex_Projects\Inkscape MCP\workspace\kahve-fincan.svg
+width: 420
+Artık gerçek bir kahve fincanı. Kulpu biraz büyütüp gövdeye daha iyi bağlayayım, sonra köpük kabarcıkları ve çekirdekleri ekleyeceğim.
+
+Kulp düzeltme (büyüt + bağla):
+
+Used inkscape: element update
+document_path: C:\Users\tamer\Codex_Projects\Inkscape MCP\workspace\kahve-fincan.svg
+object_id: path_58bfe09ed0ca
+properties: {"d":"M 354 182 C 462 170 466 274 350 262 C 408 250 404 206 354 182 Z"}
+{"object_id":"path_58bfe09ed0ca","revision":12,"updated_properties":["d"]}
+9/N — Köpük kabarcıkları (9 adet circle; aralarında sıra önemsiz, tek seferde):
+
+
+Used 9 tools
+Used inkscape: element create
+document_path: C:\Users\tamer\Codex_Projects\Inkscape MCP\workspace\kahve-fincan.svg
+element_type: circle
+properties: {"cx":195,"cy":132,"r":7,"fill":"#C99A6A","stroke":"#3B2A1E","stroke_width":1.5}
+{"element_id":"circle_73fbd55f0a24","element_type":"circle","revision":13,"px_coords":{"cx":195,"cy":132,"r":7}}
+Used inkscape: element create
+document_path: C:\Users\tamer\Codex_Projects\Inkscape MCP\workspace\kahve-fincan.svg
+element_type: circle
+properties: {"cx":214,"cy":127,"r":5,"fill":"#E6CBA6"}
+{"element_id":"circle_10de8cdce521","element_type":"circle","revision":14,"px_coords":{"cx":214,"cy":127,"r":5}}
+Used inkscape: element create
+document_path: C:\Users\tamer\Codex_Projects\Inkscape MCP\workspace\kahve-fincan.svg
+element_type: circle
+properties: {"cx":232,"cy":134,"r":8,"fill":"#B07F4E","stroke":"#3B2A1E","stroke_width":1.5}
+{"element_id":"circle_10dbe6389d61","element_type":"circle","revision":15,"px_coords":{"cx":232,"cy":134,"r":8}}
+Used inkscape: element create
+document_path: C:\Users\tamer\Codex_Projects\Inkscape MCP\workspace\kahve-fincan.svg
+element_type: circle
+properties: {"cx":250,"cy":128,"r":4.5,"fill":"#E6CBA6"}
+{"element_id":"circle_9b1c2e24f4c6","element_type":"circle","revision":16,"px_coords":{"cx":250,"cy":128,"r":4.5}}
+Used inkscape: element create
+document_path: C:\Users\tamer\Codex_Projects\Inkscape MCP\workspace\kahve-fincan.svg
+element_type: circle
+properties: {"cx":268,"cy":133,"r":6,"fill":"#C99A6A","stroke":"#3B2A1E","stroke_width":1.5}
+{"element_id":"circle_46b51451a48a","element_type":"circle","revision":17,"px_coords":{"cx":268,"cy":133,"r":6}}
+Used inkscape: element create
+document_path: C:\Users\tamer\Codex_Projects\Inkscape MCP\workspace\kahve-fincan.svg
+element_type: circle
+properties: {"cx":224,"cy":143,"r":4,"fill":"#E6CBA6"}
+{"element_id":"circle_ef1719d0de8d","element_type":"circle","revision":18,"px_coords":{"cx":224,"cy":143,"r":4}}
+Used inkscape: element create
+document_path: C:\Users\tamer\Codex_Projects\Inkscape MCP\workspace\kahve-fincan.svg
+element_type: circle
+properties: {"cx":206,"cy":141,"r":4.5,"fill":"#A9774A","stroke":"#3B2A1E","stroke_width":1.5}
+{"element_id":"circle_5c759a1feb2a","element_type":"circle","revision":19,"px_coords":{"cx":206,"cy":141,"r":4.5}}
+Used inkscape: element create
+document_path: C:\Users\tamer\Codex_Projects\Inkscape MCP\workspace\kahve-fincan.svg
+element_type: circle
+properties: {"cx":285,"cy":138,"r":4,"fill":"#C99A6A","stroke":"#3B2A1E","stroke_width":1.5}
+{"element_id":"circle_b52f891f9259","element_type":"circle","revision":20,"px_coords":{"cx":285,"cy":138,"r":4}}
+Used inkscape: element create
+document_path: C:\Users\tamer\Codex_Projects\Inkscape MCP\workspace\kahve-fincan.svg
+element_type: circle
+properties: {"cx":246,"cy":140,"r":3.5,"fill":"#E6CBA6"}
+{"element_id":"circle_29235a2ac872","element_type":"circle","revision":21,"px_coords":{"cx":246,"cy":140,"r":3.5}}
+9 kabarcık eklendi. Şimdi tabağın sol önündeki iki kahve çekirdeği (gövde + orta dikiş, sıra önemli → tek tek):
+
+10/N — Çekirdek 1 gövdesi:
+
+Used inkscape: element create
+document_path: C:\Users\tamer\Codex_Projects\Inkscape MCP\workspace\kahve-fincan.svg
+element_type: path
+properties: {"d":"M 150 385 C 162 374 198 384 206 400 C 211 412 190 420 170 415 C 152 409 142 396 150 385 Z","fill":"#6E4426","stroke":"#3B2A1E","stroke_width":4}
+{"element_id":"path_77906178a2ea","element_type":"path","revision":22,"px_coords":{}}
+11/N — Çekirdek 1 dikişi (fill yok, sadece kontur):
+
+Used inkscape: element create
+document_path: C:\Users\tamer\Codex_Projects\Inkscape MCP\workspace\kahve-fincan.svg
+element_type: path
+properties: {"d":"M 160 387 C 174 395 183 405 199 409","fill":"none","stroke":"#3B2A1E","stroke_width":3}
+{"element_id":"path_1778a7ef02b6","element_type":"path","revision":23,"px_coords":{}}
+12/N — Çekirdek 2 gövdesi (öndeki, üstte):
+
+Used inkscape: element create
+document_path: C:\Users\tamer\Codex_Projects\Inkscape MCP\workspace\kahve-fincan.svg
+element_type: path
+properties: {"d":"M 109 401 C 119 390 153 397 162 412 C 168 424 148 432 128 428 C 110 424 99 411 109 401 Z","fill":"#7A4D2B","stroke":"#3B2A1E","stroke_width":4}
+{"element_id":"path_fae58910d729","element_type":"path","revision":24,"px_coords":{}}
+13/N — Çekirdek 2 dikişi:
+
+Used inkscape: element create
+document_path: C:\Users\tamer\Codex_Projects\Inkscape MCP\workspace\kahve-fincan.svg
+element_type: path
+properties: {"d":"M 118 403 C 131 410 141 419 156 422","fill":"none","stroke":"#3B2A1E","stroke_width":3}
+{"element_id":"path_9fc872d990dd","element_type":"path","revision":25,"px_coords":{}}
+Tüm öğeler eklendi. Tam önizleme — beans + bubbles dahil:
+
+Used inkscape: render preview
+document_path: C:\Users\tamer\Codex_Projects\Inkscape MCP\workspace\kahve-fincan.svg
+width: 420
+Referans görseldeki gibi forma derinlik için son rötuş: gövdeyi hafif kırık-beyaz yapıp sağ tarafa yumuşak gölge ve sol-alt'a beyaz parlama ekliyorum (hepsi element_create/element_update, bölgeler çakışmadığı için tek seferde):
+
+
+Used 4 tools
+Used inkscape: element update
+document_path: C:\Users\tamer\Codex_Projects\Inkscape MCP\workspace\kahve-fincan.svg
+object_id: path_0969555e83e1
+properties: {"fill":"#F4EEE4"}
+{"object_id":"path_0969555e83e1","revision":26,"updated_properties":["fill"]}
+Used inkscape: element create
+document_path: C:\Users\tamer\Codex_Projects\Inkscape MCP\workspace\kahve-fincan.svg
+element_type: path
+properties: {"d":"M 322 180 C 352 228 345 300 256 346 C 312 316 326 235 315 182 Z","fill":"#E7DDD0"}
+{"element_id":"path_e1506f80a7e0","element_type":"path","revision":27,"px_coords":{}}
+Used inkscape: element create
+document_path: C:\Users\tamer\Codex_Projects\Inkscape MCP\workspace\kahve-fincan.svg
+element_type: path
+properties: {"d":"M 150 200 C 142 235 150 280 172 300 C 165 270 162 235 168 205 C 165 200 158 198 150 200 Z","fill":"#FFFFFF"}
+{"element_id":"path_b3fa9224444b","element_type":"path","revision":28,"px_coords":{}}
+Used inkscape: element create
+document_path: C:\Users\tamer\Codex_Projects\Inkscape MCP\workspace\kahve-fincan.svg
+element_type: path
+properties: {"d":"M 185 215 C 180 245 184 275 196 290 C 192 265 191 240 196 218 C 193 214 188 213 185 215 Z","fill":"#FFFFFF"}
+{"element_id":"path_7ff3398ffd0e","element_type":"path","revision":29,"px_coords":{}}
+Son hâli render edip teslim için PNG'ye de aktarıyorum:
+
+
+Used 2 tools
+Used inkscape: render preview
+document_path: C:\Users\tamer\Codex_Projects\Inkscape MCP\workspace\kahve-fincan.svg
+width: 460
+document_path: C:\Users\tamer\Codex_Projects\Inkscape MCP\workspace\kahve-fincan.svg
+output_name: kahve-fincan
+export_format: png
+width: 1040
+{"output_path":"C:\\Users\\tamer\\Codex_Projects\\Inkscape MCP\\workspace\\kahve-fincan.png","format":"png","file_size":94152}
+İşte sonuç — referanstaki tüm öğeler, baştan sona Inkscape MCP ile (elle SVG dosyası yok, trace yok), element_create/element_update ile katman katman çizildi:
+
+Çizilen öğeler (arkadan öne):
+
+🟧 Arka plan (rect, şeftali)
+🍽️ Tabak (2 elips-path: dış disk + iç halka)
+☕ Kulp (path, sağda)
+🥛 Fincan gövdesi (path; kırık-beyaz + sağda gölge, sol-altta 2 beyaz parlama)
+⬛ Kahve yüzeyi (krema halkası + koyu espresso merkezi)
+🫧 9 köpük kabarcığı (circle)
+🫘 2 kahve çekirdeği (gövde + orta dikiş)
+Teslim dosyaları (workspace\):
+
+kahve-fincan.svg — düzenlenebilir vektör (rev. 29)
+kahve-fincan.png — 1040px, 94 KB
+Dürüst notlar (sen MCP'nin geliştiricisi olduğun için işine yarar): Bu görevde aracın iki sınırına çarptım —
+
+element_create'de ellipse yok (sadece rect/circle/path/text). Tabak, ağız ve kahve yüzeyini arc-path (a rx ry ...) ile elipsmiş gibi kurmak zorunda kaldım. Doğrudan ellipse desteği bu tür işi çok kısaltır.
+Sadece sona ekleme var, z-order/insert yok. Gölgeyi kahvenin altına koyamadım çünkü her create dosyanın sonuna ekleniyor; bu yüzden boyama sırasını baştan planlayıp gölge/parlamayı çakışmayan bölgelere koydum. Bir insert_before/z-order parametresi faydalı olur.
+İstersen çekirdekleri büyütebilir, fincana gradient gölgeleme ekleyebilir ya da kompozisyonu referansa daha da yaklaştırabilirim.
