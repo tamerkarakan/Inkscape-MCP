@@ -19,3 +19,9 @@ Thumbs.db
 *.tmp
 # Revision sidecar files (Madde 3)
 *.inkrev
+
+# Local example inputs (client-test scratch)
+internet.jpg
+kahve.png
+resim+prompt.txt
+text prompt.txt

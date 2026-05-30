@@ -50,7 +50,13 @@ class TestServerCreation:
         assert "import_image" in tools
         assert "trace_bitmap" in tools
         assert "ask_user" in tools
-        assert len(tools) == 14
+        assert "workspace_info" in tools
+        assert "write_svg" in tools
+        assert "transform_element" in tools
+        assert "reorder_element" in tools
+        assert "create_gradient" in tools
+        assert "create_pattern" in tools
+        assert len(tools) == 20
 
     def test_resources_registered(self):
         """All required resources are registered (capabilities, doc-info, svg, preview)."""
@@ -85,12 +91,25 @@ class TestServerCreation:
         from inkscape_mcp.server import create_server
         server = create_server()
         tools = server._tool_manager.list_tools()
-        assert len(tools) == 14, f"Expected 14 tools, got {len(tools)}"
+        assert len(tools) == 20, f"Expected 20 tools, got {len(tools)}"
+        # render_preview returns an inline FastMCP Image (not structured data),
+        # so it intentionally has no output_schema.
+        no_schema_ok = {"render_preview"}
         for t in tools:
+            if t.name in no_schema_ok:
+                continue
             assert t.output_schema is not None, (
                 f"Tool '{t.name}' has output_schema=None — "
                 f"return type annotation missing or not TypedDict"
             )
+
+    def test_server_instructions_nudge_preview(self):
+        """Server instructions tell clients to render_preview after edits (auto-preview)."""
+        from inkscape_mcp.server import create_server
+        server = create_server()
+        ins = getattr(server, "instructions", None)
+        assert ins, "server has no instructions"
+        assert "render_preview" in ins
 
 
 # ═══════════════════════════════════════════════════════

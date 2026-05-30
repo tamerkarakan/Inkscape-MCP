@@ -16,7 +16,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from mcp.server.fastmcp import Context, FastMCP
+from mcp.server.fastmcp import Context, FastMCP, Image
 from mcp.types import ToolAnnotations
 
 from .exceptions import InkscapeError
@@ -29,6 +29,7 @@ from .tools import (
     tool_export,
     tool_query,
     tool_render_preview,
+    _render_preview_png,
     tool_run_actions,
     tool_gui_open,
     tool_gui_apply,
@@ -37,6 +38,12 @@ from .tools import (
     tool_import_image,
     tool_trace_bitmap,
     tool_ask_user,
+    tool_workspace_info,
+    tool_write_svg,
+    tool_transform_element,
+    tool_reorder_element,
+    tool_create_gradient,
+    tool_create_pattern,
 )
 from .gui_session import GuiSessionManager
 from .resources import (
@@ -60,6 +67,12 @@ from .schemas import (
     ImportImageStructured as ImportImageResult,
     TraceBitmapStructured as TraceBitmapResult,
     AskUserStructured as AskUserResult,
+    WorkspaceInfoStructured as WorkspaceInfoResult,
+    WriteSvgStructured as WriteSvgResult,
+    TransformElementStructured as TransformElementResult,
+    ReorderElementStructured as ReorderElementResult,
+    CreateGradientStructured as CreateGradientResult,
+    CreatePatternStructured as CreatePatternResult,
 )
 
 
@@ -85,7 +98,21 @@ def create_server() -> FastMCP:
     gui_mgr = GuiSessionManager(config)
     project_root = _get_project_root()
 
-    mcp = FastMCP("inkscape-mcp")
+    mcp = FastMCP(
+        "inkscape-mcp",
+        instructions=(
+            "Inkscape SVG editor. AFTER ANY tool that modifies a document "
+            "(write_svg, element_create/update, transform_element, "
+            "reorder_element, create_gradient/pattern, import_image, "
+            "trace_bitmap, run_actions), call render_preview as the LAST step so "
+            "the user SEES the result — do not wait to be asked. "
+            "Authoring: capable clients may emit the whole SVG in one write_svg "
+            "call; otherwise build incrementally with element_create (which the "
+            "MCP turns into valid SVG). Files: call workspace_info to learn where "
+            "to put input images and find outputs; keep everything under that "
+            "directory."
+        ),
+    )
 
     def _to_error(err: InkscapeError) -> dict:
         return {
@@ -112,7 +139,14 @@ def create_server() -> FastMCP:
         view_box: str | None = None,
         doc_name: str = "document",
     ) -> DocumentCreateResult:
-        """Create a new empty SVG document via DOM (no Inkscape CLI)."""
+        """Create a new empty SVG document and return its {document_path}.
+
+        width/height are the canvas size in user units. view_box defaults to
+        "0 0 width height"; pass it explicitly to decouple the coordinate system
+        from the pixel size. Use the returned document_path in every later call
+        (element_create, render_preview, export_document, ...). Files land in the
+        workspace (see workspace_info).
+        """
         try:
             return await tool_document_create(
                 session_mgr, config,
@@ -135,8 +169,33 @@ def create_server() -> FastMCP:
         element_type: str,
         properties: dict[str, Any],
         expected_revision: int | None = None,
+        before_id: str | None = None,
     ) -> ElementCreateResult:
-        """Create a new SVG element (rect, circle, path, text) via DOM."""
+        """Create one SVG element via DOM and return its generated id.
+
+        element_type + the keys to put in `properties` (units = user units):
+          - "rect":    x, y, width, height; optional rx, ry (corner radius)
+          - "circle":  cx, cy, r
+          - "ellipse": cx, cy, rx, ry  (use this for ovals — no arc-path needed)
+          - "path":    d  (an SVG path data string, e.g. "M10 10 L90 90 Z")
+          - "text":    x, y, text; optional font_family, font_size
+
+        Paint/style keys work on any type: fill, stroke, stroke_width, opacity,
+        fill_opacity, stroke_opacity, stroke_dasharray, stroke_linecap,
+        stroke_linejoin, transform, ... Both snake_case (stroke_width) and the
+        raw SVG hyphen name (stroke-width) are accepted; any key not consumed by
+        the type above passes straight through to the SVG attribute, so nothing
+        is silently dropped. fill/stroke take a CSS color ("#ff0000", "red") or
+        "url(#id)" from create_gradient/create_pattern, or "none".
+
+        Example: element_create(document_path=..., element_type="rect",
+          properties={"x":10,"y":10,"width":80,"height":40,"rx":6,
+                      "fill":"#3366cc","stroke":"black","stroke_width":2})
+
+        Appends on top (end of document = highest z-order) by default. Pass
+        before_id to insert this element directly BENEATH an existing one
+        (e.g. a shadow under a shape); see reorder_element to restack later.
+        """
         try:
             return await tool_element_create(
                 session_mgr, config,
@@ -144,6 +203,7 @@ def create_server() -> FastMCP:
                 element_type=element_type,
                 properties=properties,
                 expected_revision=expected_revision,
+                before_id=before_id,
             )
         except InkscapeError:
             raise
@@ -162,7 +222,14 @@ def create_server() -> FastMCP:
         properties: dict[str, Any],
         expected_revision: int | None = None,
     ) -> ElementUpdateResult:
-        """Update properties of existing SVG element via DOM (Madde 12)."""
+        """Change attributes of an existing element (found by object_id) via DOM.
+
+        `properties` uses the SAME keys as element_create: geometry (x, y, width,
+        height, cx, cy, r, rx, ry, d, text, ...) and paint/style (fill, stroke,
+        stroke_width, opacity, transform, "url(#id)" fills, ...). Only the keys
+        you pass are changed; others are left as-is. snake_case and hyphenated
+        SVG names both work; unknown keys pass through to the attribute.
+        """
         try:
             return await tool_element_update(
                 session_mgr, config,
@@ -243,8 +310,8 @@ def create_server() -> FastMCP:
         document_path: str,
         width: int = 400,
         height: int | None = None,
-    ) -> RenderPreviewResult:
-        """Render a PNG preview of the current SVG."""
+    ) -> Image:
+        """Render a PNG preview of the current SVG (returned as an inline image)."""
         try:
             return await tool_render_preview(
                 session_mgr, config,
@@ -270,9 +337,22 @@ def create_server() -> FastMCP:
         expected_revision: int | None = None,
         ctx: Context = None,
     ) -> RunActionsResult:
-        """Run a headless-safe Inkscape action (path ops, set_attribute, transform).
+        """Run a headless-safe Inkscape action on existing elements.
 
-        id-changing operations return an id_map {survived, destroyed, created}.
+        operation + how object_ids / action_params are used:
+          - "path_union" / "path_difference" / "path_intersection" /
+            "path_exclusion": boolean-combine 2+ paths in object_ids into one
+            new path (order matters for difference). DESTRUCTIVE — the inputs
+            are consumed; may prompt the user to confirm.
+          - "set_attribute": set one attribute on object_ids[0];
+            action_params={"attribute": <name>, "value": <value>}
+          - "transform_translate": shift object_ids[0] by
+            action_params={"dx": <n>, "dy": <n>} (baked into x/y, not a transform).
+            For scale/rotate/skew use transform_element instead.
+
+        Because path ops change ids, the result includes an id_map
+        {survived, destroyed, created} — read `created` for the new path id.
+        Values may not contain ';' or ':' (action-injection guard).
         """
         try:
             return await tool_run_actions(
@@ -385,20 +465,28 @@ def create_server() -> FastMCP:
     )
     async def import_image(
         document_path: str,
-        image_path: str,
+        image_path: str | None = None,
         x: float = 0.0,
         y: float = 0.0,
         width: float | None = None,
         height: float | None = None,
         expected_revision: int | None = None,
+        image_data: str | None = None,
+        image_format: str = "png",
     ) -> ImportImageResult:
-        """Embed a raster image (PNG/JPG/GIF/WEBP) into the SVG via DOM."""
+        """Embed a raster into the SVG via DOM.
+
+        Source is either image_path (a file in the workspace) OR image_data
+        (base64 bytes + image_format) — the latter lets you embed a chat-pasted
+        image that has no file on disk.
+        """
         try:
             return await tool_import_image(
                 session_mgr, config,
                 document_path=document_path, image_path=image_path,
                 x=x, y=y, width=width, height=height,
                 expected_revision=expected_revision,
+                image_data=image_data, image_format=image_format,
             )
         except InkscapeError:
             raise
@@ -459,6 +547,196 @@ def create_server() -> FastMCP:
         """Ask the human (behind the client) a structured question via elicitation."""
         return await tool_ask_user(ctx, question, options)
 
+    @mcp.tool(
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
+    async def workspace_info() -> WorkspaceInfoResult:
+        """Get the MCP working directory: where to put input files and find outputs."""
+        return tool_workspace_info(config)
+
+    @mcp.tool(
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
+    async def write_svg(
+        doc_name: str,
+        svg_content: str,
+    ) -> WriteSvgResult:
+        """Author a full SVG document in one call (validated, saved to workspace).
+
+        Fast path for capable clients: emit the whole SVG at once instead of
+        many element_create calls. element_create remains for incremental edits
+        and weak/low-context clients.
+        """
+        try:
+            return await tool_write_svg(
+                session_mgr, config,
+                doc_name=doc_name, svg_content=svg_content,
+            )
+        except InkscapeError:
+            raise
+
+    @mcp.tool(
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
+    async def transform_element(
+        document_path: str,
+        object_id: str,
+        operation: str,
+        params: dict[str, Any] | None = None,
+        expected_revision: int | None = None,
+    ) -> TransformElementResult:
+        """Move/scale/rotate/shear an element; composes onto its transform attr.
+
+        operation + the keys to put in `params`:
+          - "translate": dx, dy                (shift, in user units)
+          - "scale":     sx[, sy]              (sy defaults to sx = uniform;
+                                                give sx≠sy to make an oval from a circle)
+          - "rotate":    angle[, cx, cy]       (degrees; cx,cy = pivot, else origin)
+          - "skew_x":    angle                 (degrees — horizontal shear)
+          - "skew_y":    angle                 (degrees — vertical shear)
+
+        Each call APPENDS to any existing transform (does not replace it), so
+        repeated calls stack. Example: rotate 30° about (50,50):
+          transform_element(..., operation="rotate", params={"angle":30,"cx":50,"cy":50})
+        """
+        try:
+            return await tool_transform_element(
+                session_mgr, config,
+                document_path=document_path, object_id=object_id,
+                operation=operation, params=params,
+                expected_revision=expected_revision,
+            )
+        except InkscapeError:
+            raise
+
+    @mcp.tool(
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
+    async def reorder_element(
+        document_path: str,
+        object_id: str,
+        position: str,
+        expected_revision: int | None = None,
+    ) -> ReorderElementResult:
+        """Restack an element in z-order (paint order = document order).
+
+        position:
+          - "top":    move to front (drawn last, above everything)
+          - "bottom": move to back  (drawn first, behind everything)
+          - "up":     swap forward one step (above the next sibling)
+          - "down":   swap backward one step (below the previous sibling)
+
+        "up"/"down" are no-ops at the respective edge. To insert a NEW element
+        below an existing one in a single call, use element_create(before_id=...).
+        """
+        try:
+            return await tool_reorder_element(
+                session_mgr, config,
+                document_path=document_path, object_id=object_id,
+                position=position, expected_revision=expected_revision,
+            )
+        except InkscapeError:
+            raise
+
+    @mcp.tool(
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
+    async def create_gradient(
+        document_path: str,
+        gradient_type: str,
+        stops: list[dict[str, Any]],
+        params: dict[str, Any] | None = None,
+        expected_revision: int | None = None,
+    ) -> CreateGradientResult:
+        """Define a linear/radial gradient in <defs>; returns {gradient_id}.
+
+        Apply it by setting an element's fill (or stroke) to "url(#<gradient_id>)".
+
+        gradient_type: "linear" or "radial".
+        stops: a list of color stops, each a dict:
+          {"offset": 0..1, "color": "#rrggbb"[, "opacity": 0..1]}
+          e.g. [{"offset":0,"color":"#ffffff"},{"offset":1,"color":"#0000ff"}]
+        params (user-space coords, optional):
+          - linear: x1, y1, x2, y2   (gradient axis; default 0,0 → 1,0)
+          - radial: cx, cy, r[, fx, fy]   (center+radius; fx,fy = focal point)
+
+        Example: create_gradient(..., gradient_type="linear",
+          stops=[{"offset":0,"color":"red"},{"offset":1,"color":"yellow"}],
+          params={"x1":0,"y1":0,"x2":200,"y2":0})
+        then element_update(..., properties={"fill":"url(#<gradient_id>)"}).
+        """
+        try:
+            return await tool_create_gradient(
+                session_mgr, config,
+                document_path=document_path, gradient_type=gradient_type,
+                stops=stops, params=params, expected_revision=expected_revision,
+            )
+        except InkscapeError:
+            raise
+
+    @mcp.tool(
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
+    async def create_pattern(
+        document_path: str,
+        width: float,
+        height: float,
+        content_svg: str,
+        expected_revision: int | None = None,
+    ) -> CreatePatternResult:
+        """Define a repeating tile <pattern> in <defs>; returns {pattern_id}.
+
+        Apply it by setting an element's fill to "url(#<pattern_id>)".
+
+        width, height: the tile size in user units (the motif repeats every
+          width × height).
+        content_svg: a raw SVG fragment (one or more elements) drawn inside one
+          tile, in tile-local coordinates 0..width / 0..height. No <svg> wrapper.
+          e.g. '<circle cx="5" cy="5" r="3" fill="black"/>'
+
+        Example: create_pattern(..., width=10, height=10,
+          content_svg='<rect width="5" height="5" fill="#ccc"/>')
+        then element_update(..., properties={"fill":"url(#<pattern_id>)"}).
+        """
+        try:
+            return await tool_create_pattern(
+                session_mgr, config,
+                document_path=document_path, width=width, height=height,
+                content_svg=content_svg, expected_revision=expected_revision,
+            )
+        except InkscapeError:
+            raise
+
     # ═══════════════════════════════════════════
     #  Resources
     # ═══════════════════════════════════════════
@@ -492,13 +770,11 @@ def create_server() -> FastMCP:
     async def get_preview(document_path: str) -> str:
         """PNG preview resource (base64) for the current SVG document."""
         try:
-            result = await tool_render_preview(
-                session_mgr, config,
-                document_path=document_path,
+            png_data, _revision = await _render_preview_png(
+                session_mgr, config, document_path=document_path,
             )
-            # tool now returns the structured payload directly (RenderPreviewStructured)
-            preview_path = result.get("preview_resource", "")
-            return str(preview_path) if preview_path else "Preview unavailable"
+            import base64
+            return base64.b64encode(png_data).decode()
         except InkscapeError as e:
             return str(e)
 

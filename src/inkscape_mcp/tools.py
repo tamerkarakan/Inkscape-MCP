@@ -19,6 +19,7 @@ from typing import Any
 
 from lxml import etree
 from pydantic import BaseModel, Field
+from mcp.server.fastmcp import Image
 
 from .actions import (
     chain_export_png,
@@ -210,6 +211,7 @@ async def tool_element_create(
     element_type: str,
     properties: dict[str, Any],
     expected_revision: int | None = None,
+    before_id: str | None = None,
 ) -> dict:
     """Create a new SVG element via DOM (F3/F4: NO Inkscape CLI for creation)."""
     svg_path = validate_path(Path(document_path), config)
@@ -296,8 +298,43 @@ async def tool_element_create(
                 elem.set("fill", str(properties["fill"]))
             elem.text = str(text)
 
+        elif element_type == "ellipse":
+            elem = etree.SubElement(tree, f"{{{ns}}}ellipse")
+            elem.set("id", new_id)
+            elem.set("cx", str(properties.get("cx", 0)))
+            elem.set("cy", str(properties.get("cy", 0)))
+            elem.set("rx", str(properties.get("rx", 30)))
+            elem.set("ry", str(properties.get("ry", 20)))
+
         else:
             raise InkscapeError(f"Unsupported element_type: {element_type}")
+
+        # Generic attribute pass-through (fixes silent attribute dropping):
+        # apply any property the type-branch above did NOT already set —
+        # hyphenated names and extra styles (font-size, stroke-width,
+        # stroke-linecap, letter-spacing, text-anchor, font-weight, opacity,
+        # transform, ...). Only fills gaps; never overrides branch output.
+        # Weak/low-context clients rely on element_create alone, so nothing
+        # passed must be silently dropped.
+        _passthrough_map = {
+            "stroke_width": "stroke-width",
+            "font_family": "font-family",
+            "font_size": "font-size",
+        }
+        for _k, _v in properties.items():
+            if _k in ("id", "text"):
+                continue
+            _attr = _passthrough_map.get(_k, _k)
+            if elem.get(_attr) is None:
+                elem.set(_attr, str(_v))
+
+        # z-order: optionally insert directly BEFORE an existing element
+        # (otherwise the new element stays appended at the end = top z-order).
+        # Lets a client place e.g. a shadow under an already-created shape.
+        if before_id:
+            _t = tree.xpath(f"//*[@id='{before_id}']")
+            if _t:
+                _t[0].addprevious(elem)
 
         # Serialize and atomically write
         new_svg = etree.tostring(
@@ -510,6 +547,9 @@ async def tool_export(
 
     # Build output path (server generates, Madde 8)
     safe_name = "".join(c for c in output_name if c.isalnum() or c in "._-")
+    # Avoid double extension if output_name already ends with .<format>
+    if safe_name.lower().endswith("." + export_format.lower()):
+        safe_name = safe_name[: -(len(export_format) + 1)]
     output_path = config.workspace_root / f"{safe_name}.{export_format}"
 
     async with state.lock:
@@ -560,16 +600,16 @@ async def tool_export(
 # ── render_preview (Inkscape CLI) ──
 
 
-async def tool_render_preview(
+async def _render_preview_png(
     session_mgr: SessionManager,
     config: SecurityConfig,
     document_path: str,
     width: int = 400,
     height: int | None = None,
-) -> dict:
-    """Render a PNG preview of the current SVG.
+) -> tuple[bytes, int]:
+    """Render the current SVG to PNG bytes. Returns (png_bytes, revision).
 
-    Returns image content inline or resource_link (Madde 11).
+    Shared core used by both the render_preview tool and the preview resource.
     """
     svg_path = validate_path(Path(document_path), config)
     state = await session_mgr.get_or_open(svg_path)
@@ -595,40 +635,31 @@ async def tool_render_preview(
             )
 
             png_data = tmp_png.read_bytes()
-
-            # Size check: if exceeds max_preview_bytes, return resource_link
-            if len(png_data) > config.max_preview_bytes:
-                return _success(
-                    [{"type": "text", "text": "Preview too large; use resource link"}],
-                    {
-                        "preview_available": True,
-                        "preview_size": len(png_data),
-                        "preview_resource": f"inkscape://session/{state.svg_path.stem}/preview",
-                    },
-                )
-
-            import base64
-            b64 = base64.b64encode(png_data).decode()
-
-            return _success(
-                [
-                    {
-                        "type": "image",
-                        "data": b64,
-                        "mimeType": "image/png",
-                    }
-                ],
-                {
-                    "preview_available": True,
-                    "preview_size": len(png_data),
-                    "revision": state.revision,
-                },
-            )
+            return png_data, state.revision
         finally:
             try:
                 tmp_png.unlink(missing_ok=True)
             except OSError:
                 pass
+
+
+async def tool_render_preview(
+    session_mgr: SessionManager,
+    config: SecurityConfig,
+    document_path: str,
+    width: int = 400,
+    height: int | None = None,
+) -> Image:
+    """Render a PNG preview of the current SVG and return it as an inline image.
+
+    Returns a FastMCP Image so the client actually RECEIVES the PNG. (The prior
+    `_success`-based path returned only structured metadata and silently dropped
+    the image content — broken for the tool's whole purpose.)
+    """
+    png_data, _revision = await _render_preview_png(
+        session_mgr, config, document_path, width=width, height=height
+    )
+    return Image(data=png_data, format="png")
 
 
 # ── run_actions (Inkscape CLI escape hatch) ──
@@ -980,6 +1011,9 @@ async def tool_gui_export(
         )
 
     safe_name = "".join(c for c in output_name if c.isalnum() or c in "._-")
+    # Avoid double extension if output_name already ends with .<format>
+    if safe_name.lower().endswith("." + export_format.lower()):
+        safe_name = safe_name[: -(len(export_format) + 1)]
     output_path = config.workspace_root / f"{safe_name}.{export_format}"
 
     session = await gui_mgr.get_or_start(app_id, svg_path)
@@ -1027,35 +1061,51 @@ async def tool_import_image(
     session_mgr: SessionManager,
     config: SecurityConfig,
     document_path: str,
-    image_path: str,
+    image_path: str | None = None,
     x: float = 0.0,
     y: float = 0.0,
     width: float | None = None,
     height: float | None = None,
     expected_revision: int | None = None,
+    image_data: str | None = None,
+    image_format: str = "png",
 ) -> dict:
-    """Embed a raster (PNG/JPG/GIF/WEBP) into the SVG as <image> via DOM."""
+    """Embed a raster (PNG/JPG/GIF/WEBP) into the SVG as <image> via DOM.
+
+    Source is EITHER a file (image_path, inside the workspace) OR raw bytes
+    (image_data = base64; image_format gives the type). image_data lets a
+    client embed a chat-pasted image that has no file on disk.
+    """
     import base64
     svg_path = validate_path(Path(document_path), config)
-    img_path = validate_path(Path(image_path), config)
-    if not img_path.exists():
-        raise InkscapeError(f"Image file not found: {img_path}")
-    suffix = img_path.suffix.lower()
-    mime_map = {
-        ".png": "image/png",
-        ".jpg": "image/jpeg",
-        ".jpeg": "image/jpeg",
-        ".gif": "image/gif",
-        ".webp": "image/webp",
+    fmt_mime = {
+        "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
+        "gif": "image/gif", "webp": "image/webp",
     }
-    mime = mime_map.get(suffix)
-    if mime is None:
-        raise InkscapeError(f"Unsupported image type: {suffix}")
+
+    if image_data is not None:
+        try:
+            img_bytes = base64.b64decode(image_data)
+        except Exception as exc:
+            raise InkscapeError(f"Invalid base64 image_data: {exc}")
+        mime = fmt_mime.get(image_format.lower().lstrip("."))
+        if mime is None:
+            raise InkscapeError(f"Unsupported image_format: {image_format}")
+    elif image_path:
+        img_path = validate_path(Path(image_path), config)
+        if not img_path.exists():
+            raise InkscapeError(f"Image file not found: {img_path}")
+        mime = fmt_mime.get(img_path.suffix.lower().lstrip("."))
+        if mime is None:
+            raise InkscapeError(f"Unsupported image type: {img_path.suffix}")
+        img_bytes = img_path.read_bytes()
+    else:
+        raise InkscapeError("Provide either image_path or image_data")
+
     if width is None:
         width = 100.0
     if height is None:
         height = 100.0
-    img_bytes = img_path.read_bytes()
     b64 = base64.b64encode(img_bytes).decode("ascii")
     data_uri = f"data:{mime};base64,{b64}"
     state = await session_mgr.get_or_open(svg_path)
@@ -1232,3 +1282,272 @@ async def tool_ask_user(ctx, question: str, options: list[str] | None = None) ->
             [{"type": "text", "text": f"ask_user: {question[:60]}"}],
             {"answered": False, "action": "cancel", "response": ""},
         )
+
+
+def tool_workspace_info(config) -> dict:
+    """Report the MCP working directory (where to place inputs / find outputs)."""
+    ws = config.workspace_root
+    try:
+        files = sorted([p.name for p in ws.iterdir() if p.is_file()])[:100]
+    except Exception:
+        files = []
+    note = (
+        "This is the MCP's working directory. Put any input images you want to "
+        "import/trace HERE, and all generated files (exports, previews) are saved "
+        "HERE. Use absolute paths under this directory."
+    )
+    return _success(
+        [{"type": "text", "text": f"workspace: {ws}"}],
+        {"workspace_path": str(ws), "files": files, "note": note},
+    )
+
+
+async def tool_write_svg(
+    session_mgr: SessionManager,
+    config: SecurityConfig,
+    doc_name: str,
+    svg_content: str,
+) -> dict:
+    """Author a full SVG in one call (validated well-formed XML, saved to workspace)."""
+    workspace = config.workspace_root
+    safe_name = "".join(c for c in doc_name if c.isalnum() or c in "._-")
+    file_path = workspace / f"{safe_name}.svg"
+
+    try:
+        etree.fromstring(svg_content.encode("utf-8"))
+    except Exception as exc:
+        raise InkscapeError(f"Invalid SVG XML: {exc}")
+
+    atomic_write_svg(file_path, svg_content, config)
+    session_mgr.register_new(file_path, revision=1)
+
+    return _success(
+        [{"type": "text", "text": f"SVG written: {file_path.name}"}],
+        {"document_path": str(file_path), "file_name": file_path.name, "revision": 1},
+    )
+
+
+# ═══════════════════════════════════════════════════════
+#  Transform + z-order (DOM)
+# ═══════════════════════════════════════════════════════
+
+
+async def tool_transform_element(
+    session_mgr: SessionManager,
+    config: SecurityConfig,
+    document_path: str,
+    object_id: str,
+    operation: str,
+    params: dict[str, Any] | None = None,
+    expected_revision: int | None = None,
+) -> dict:
+    """Apply translate/scale/rotate/skew to an element (composes its transform)."""
+    params = params or {}
+    if operation == "translate":
+        t = f"translate({float(params.get('dx',0))},{float(params.get('dy',0))})"
+    elif operation == "scale":
+        sx = float(params.get('sx', 1))
+        sy = float(params.get('sy', sx))
+        t = f"scale({sx},{sy})"
+    elif operation == "rotate":
+        angle = float(params.get('angle', 0))
+        if 'cx' in params and 'cy' in params:
+            t = f"rotate({angle} {float(params['cx'])} {float(params['cy'])})"
+        else:
+            t = f"rotate({angle})"
+    elif operation == "skew_x":
+        t = f"skewX({float(params.get('angle',0))})"
+    elif operation == "skew_y":
+        t = f"skewY({float(params.get('angle',0))})"
+    else:
+        raise InkscapeError(f"Unknown transform operation: {operation}")
+
+    svg_path = validate_path(Path(document_path), config)
+    state = await session_mgr.get_or_open(svg_path)
+    async with state.lock:
+        session_mgr.check_revision(state, expected_revision)
+        if object_id in state.destroyed_ids:
+            raise IdDestroyedError(object_id)
+        data = read_svg_file(state.svg_path, config)
+        tree = etree.fromstring(data)
+        found = tree.xpath(f"//*[@id='{object_id}']")
+        if not found:
+            raise IdNotFoundError(object_id)
+        elem = found[0]
+        existing = elem.get("transform", "").strip()
+        combined = (existing + " " + t).strip() if existing else t
+        elem.set("transform", combined)
+        new_svg = etree.tostring(tree, xml_declaration=True, encoding="UTF-8", pretty_print=True)
+        atomic_write_svg(state.svg_path, new_svg, config)
+        new_rev = session_mgr.increment_revision(state)
+    return _success(
+        [{"type": "text", "text": f"transform {operation} on {object_id}"}],
+        {"object_id": object_id, "revision": new_rev, "transform": combined},
+    )
+
+
+async def tool_reorder_element(
+    session_mgr: SessionManager,
+    config: SecurityConfig,
+    document_path: str,
+    object_id: str,
+    position: str,
+    expected_revision: int | None = None,
+) -> dict:
+    """Change an element's z-order: top | bottom | up | down (DOM reposition)."""
+    if position not in {"top", "bottom", "up", "down"}:
+        raise InkscapeError(f"Unknown position: {position}")
+
+    svg_path = validate_path(Path(document_path), config)
+    state = await session_mgr.get_or_open(svg_path)
+    async with state.lock:
+        session_mgr.check_revision(state, expected_revision)
+        if object_id in state.destroyed_ids:
+            raise IdDestroyedError(object_id)
+        data = read_svg_file(state.svg_path, config)
+        tree = etree.fromstring(data)
+        found = tree.xpath(f"//*[@id='{object_id}']")
+        if not found:
+            raise IdNotFoundError(object_id)
+        elem = found[0]
+        parent = elem.getparent()
+        if parent is None:
+            raise InkscapeError("element has no parent")
+
+        if position == "top":
+            parent.append(elem)
+        elif position == "bottom":
+            parent.insert(0, elem)
+        elif position == "up":
+            nxt = elem.getnext()
+            if nxt is not None:
+                nxt.addnext(elem)
+        elif position == "down":
+            prv = elem.getprevious()
+            if prv is not None:
+                prv.addprevious(elem)
+
+        new_svg = etree.tostring(tree, xml_declaration=True, encoding="UTF-8", pretty_print=True)
+        atomic_write_svg(state.svg_path, new_svg, config)
+        new_rev = session_mgr.increment_revision(state)
+    return _success(
+        [{"type": "text", "text": f"moved {object_id} {position}"}],
+        {"object_id": object_id, "revision": new_rev, "position": position},
+    )
+
+
+# ═══════════════════════════════════════════════════════
+#  Paint: gradients + patterns (DOM, into <defs>)
+# ═══════════════════════════════════════════════════════
+
+
+async def tool_create_gradient(
+    session_mgr: SessionManager,
+    config: SecurityConfig,
+    document_path: str,
+    gradient_type: str,
+    stops: list[dict[str, Any]],
+    params: dict[str, Any] | None = None,
+    expected_revision: int | None = None,
+) -> dict:
+    """Define a linear/radial gradient in <defs>; returns an id for fill='url(#id)'."""
+    params = params or {}
+    if gradient_type not in {"linear", "radial"}:
+        raise InkscapeError(f"Unknown gradient_type: {gradient_type}")
+
+    ns = "http://www.w3.org/2000/svg"
+    grad_id = f"grad_{uuid.uuid4().hex[:12]}"
+
+    svg_path = validate_path(Path(document_path), config)
+    state = await session_mgr.get_or_open(svg_path)
+    async with state.lock:
+        session_mgr.check_revision(state, expected_revision)
+        data = read_svg_file(state.svg_path, config)
+        tree = etree.fromstring(data)
+        defs = tree.find(f"{{{ns}}}defs")
+        if defs is None:
+            defs = etree.Element(f"{{{ns}}}defs")
+            tree.insert(0, defs)
+
+        if gradient_type == "linear":
+            g = etree.SubElement(defs, f"{{{ns}}}linearGradient")
+            g.set("id", grad_id)
+            g.set("gradientUnits", "userSpaceOnUse")
+            g.set("x1", str(params.get("x1", 0)))
+            g.set("y1", str(params.get("y1", 0)))
+            g.set("x2", str(params.get("x2", 1)))
+            g.set("y2", str(params.get("y2", 0)))
+        else:  # radial
+            g = etree.SubElement(defs, f"{{{ns}}}radialGradient")
+            g.set("id", grad_id)
+            g.set("gradientUnits", "userSpaceOnUse")
+            g.set("cx", str(params.get("cx", 0)))
+            g.set("cy", str(params.get("cy", 0)))
+            g.set("r", str(params.get("r", 1)))
+            if "fx" in params and "fy" in params:
+                g.set("fx", str(params["fx"]))
+                g.set("fy", str(params["fy"]))
+
+        for stop in stops:
+            s = etree.SubElement(g, f"{{{ns}}}stop")
+            s.set("offset", str(stop.get("offset", 0)))
+            s.set("stop-color", str(stop.get("color", "#000000")))
+            if "opacity" in stop:
+                s.set("stop-opacity", str(stop["opacity"]))
+
+        new_svg = etree.tostring(tree, xml_declaration=True, encoding="UTF-8", pretty_print=True)
+        atomic_write_svg(state.svg_path, new_svg, config)
+        new_rev = session_mgr.increment_revision(state)
+
+    return _success(
+        [{"type": "text", "text": f"{gradient_type} gradient {grad_id}"}],
+        {"gradient_id": grad_id, "gradient_type": gradient_type, "revision": new_rev},
+    )
+
+
+async def tool_create_pattern(
+    session_mgr: SessionManager,
+    config: SecurityConfig,
+    document_path: str,
+    width: float,
+    height: float,
+    content_svg: str,
+    expected_revision: int | None = None,
+) -> dict:
+    """Define a tile <pattern> in <defs>; returns an id for fill='url(#id)'."""
+    ns = "http://www.w3.org/2000/svg"
+    pat_id = f"pat_{uuid.uuid4().hex[:12]}"
+
+    svg_path = validate_path(Path(document_path), config)
+    state = await session_mgr.get_or_open(svg_path)
+    async with state.lock:
+        session_mgr.check_revision(state, expected_revision)
+        data = read_svg_file(state.svg_path, config)
+        tree = etree.fromstring(data)
+        defs = tree.find(f"{{{ns}}}defs")
+        if defs is None:
+            defs = etree.Element(f"{{{ns}}}defs")
+            tree.insert(0, defs)
+
+        p = etree.SubElement(defs, f"{{{ns}}}pattern")
+        p.set("id", pat_id)
+        p.set("width", str(width))
+        p.set("height", str(height))
+        p.set("patternUnits", "userSpaceOnUse")
+
+        try:
+            frag = etree.fromstring(f'<g xmlns="{ns}">{content_svg}</g>')
+        except Exception as exc:
+            raise InkscapeError(f"Invalid pattern content_svg: {exc}")
+
+        for child in list(frag):
+            p.append(child)
+
+        new_svg = etree.tostring(tree, xml_declaration=True, encoding="UTF-8", pretty_print=True)
+        atomic_write_svg(state.svg_path, new_svg, config)
+        new_rev = session_mgr.increment_revision(state)
+
+    return _success(
+        [{"type": "text", "text": f"pattern {pat_id}"}],
+        {"pattern_id": pat_id, "revision": new_rev},
+    )

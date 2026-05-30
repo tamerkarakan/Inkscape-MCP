@@ -40,6 +40,29 @@ class TestImageTools:
         assert "<image" in svg_text
         assert img["element_id"] in svg_text
 
+    async def test_import_image_from_base64_data(self):
+        """import_image accepts raw base64 image_data (no file on disk)."""
+        import base64
+        server = create_server()
+        # build a real PNG via the tools, read its bytes, re-embed via image_data
+        dpa = _sc(await server.call_tool(
+            "document_create", {"doc_name": "imgdata_src", "width": 80, "height": 80}))["document_path"]
+        await server.call_tool("element_create", {
+            "document_path": dpa, "element_type": "rect",
+            "properties": {"x": 10, "y": 10, "width": 60, "height": 60, "fill": "black"}})
+        png = _sc(await server.call_tool("export_document", {
+            "document_path": dpa, "output_name": "imgdata_src", "export_format": "png"}))["output_path"]
+        b64 = base64.b64encode(Path(png).read_bytes()).decode("ascii")
+
+        dpb = _sc(await server.call_tool(
+            "document_create", {"doc_name": "imgdata_dst", "width": 200, "height": 200}))["document_path"]
+        img = _sc(await server.call_tool("import_image", {
+            "document_path": dpb, "image_data": b64, "image_format": "png",
+            "width": 200, "height": 200}))
+        assert img["element_type"] == "image"
+        svg = Path(dpb).read_text(encoding="utf-8", errors="replace")
+        assert "<image" in svg and "data:image/png;base64," in svg
+
     async def test_trace_creates_path_and_excludes_structural_ids(self):
         """trace_bitmap produces <path> and id_map.created omits structural ids."""
         server = create_server()

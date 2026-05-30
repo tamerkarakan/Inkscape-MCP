@@ -269,3 +269,68 @@ class AskUserStructured(TypedDict):
     answered: bool
     action: str
     response: str
+
+
+# ── workspace_info ──
+
+
+class WorkspaceInfoStructured(TypedDict):
+    """Structured result for workspace_info."""
+
+    workspace_path: str
+    files: list[str]
+    note: str
+
+
+# ── write_svg ──
+
+
+class WriteSvgStructured(TypedDict):
+    """Structured result for write_svg."""
+
+    document_path: str
+    file_name: str
+    revision: int
+
+
+# ── transform_element ──
+
+
+class TransformElementStructured(TypedDict):
+    """Structured result for transform_element."""
+
+    object_id: str
+    revision: int
+    transform: str
+
+
+# ── reorder_element ──
+
+
+class ReorderElementStructured(TypedDict):
+    """Structured result for reorder_element."""
+
+    object_id: str
+    revision: int
+    position: str
+
+
+# ── create_gradient ──
+
+
+class CreateGradientStructured(TypedDict):
+    """Structured result for create_gradient."""
+
+    gradient_id: str
+    gradient_type: str
+    revision: int
+
+
+# ── create_pattern ──
+
+
+class CreatePatternStructured(TypedDict):
+    """Structured result for create_pattern."""
+
+    pattern_id: str
+    revision: int
