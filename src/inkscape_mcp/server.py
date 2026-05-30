@@ -38,6 +38,7 @@ from .tools import (
     tool_import_image,
     tool_trace_bitmap,
     tool_ask_user,
+    tool_workspace_info,
 )
 from .gui_session import GuiSessionManager
 from .resources import (
@@ -61,6 +62,7 @@ from .schemas import (
     ImportImageStructured as ImportImageResult,
     TraceBitmapStructured as TraceBitmapResult,
     AskUserStructured as AskUserResult,
+    WorkspaceInfoStructured as WorkspaceInfoResult,
 )
 
 
@@ -459,6 +461,18 @@ def create_server() -> FastMCP:
     ) -> AskUserResult:
         """Ask the human (behind the client) a structured question via elicitation."""
         return await tool_ask_user(ctx, question, options)
+
+    @mcp.tool(
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
+    async def workspace_info() -> WorkspaceInfoResult:
+        """Get the MCP working directory: where to put input files and find outputs."""
+        return tool_workspace_info(config)
 
     # ═══════════════════════════════════════════
     #  Resources

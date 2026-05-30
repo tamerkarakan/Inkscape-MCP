@@ -269,3 +269,14 @@ class AskUserStructured(TypedDict):
     answered: bool
     action: str
     response: str
+
+
+# ── workspace_info ──
+
+
+class WorkspaceInfoStructured(TypedDict):
+    """Structured result for workspace_info."""
+
+    workspace_path: str
+    files: list[str]
+    note: str

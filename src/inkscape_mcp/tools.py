@@ -1224,3 +1224,21 @@ async def tool_ask_user(ctx, question: str, options: list[str] | None = None) ->
             [{"type": "text", "text": f"ask_user: {question[:60]}"}],
             {"answered": False, "action": "cancel", "response": ""},
         )
+
+
+def tool_workspace_info(config) -> dict:
+    """Report the MCP working directory (where to place inputs / find outputs)."""
+    ws = config.workspace_root
+    try:
+        files = sorted([p.name for p in ws.iterdir() if p.is_file()])[:100]
+    except Exception:
+        files = []
+    note = (
+        "This is the MCP's working directory. Put any input images you want to "
+        "import/trace HERE, and all generated files (exports, previews) are saved "
+        "HERE. Use absolute paths under this directory."
+    )
+    return _success(
+        [{"type": "text", "text": f"workspace: {ws}"}],
+        {"workspace_path": str(ws), "files": files, "note": note},
+    )
