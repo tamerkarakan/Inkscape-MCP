@@ -1418,3 +1418,120 @@ async def tool_reorder_element(
         [{"type": "text", "text": f"moved {object_id} {position}"}],
         {"object_id": object_id, "revision": new_rev, "position": position},
     )
+
+
+# ═══════════════════════════════════════════════════════
+#  Paint: gradients + patterns (DOM, into <defs>)
+# ═══════════════════════════════════════════════════════
+
+
+async def tool_create_gradient(
+    session_mgr: SessionManager,
+    config: SecurityConfig,
+    document_path: str,
+    gradient_type: str,
+    stops: list[dict[str, Any]],
+    params: dict[str, Any] | None = None,
+    expected_revision: int | None = None,
+) -> dict:
+    """Define a linear/radial gradient in <defs>; returns an id for fill='url(#id)'."""
+    params = params or {}
+    if gradient_type not in {"linear", "radial"}:
+        raise InkscapeError(f"Unknown gradient_type: {gradient_type}")
+
+    ns = "http://www.w3.org/2000/svg"
+    grad_id = f"grad_{uuid.uuid4().hex[:12]}"
+
+    svg_path = validate_path(Path(document_path), config)
+    state = await session_mgr.get_or_open(svg_path)
+    async with state.lock:
+        session_mgr.check_revision(state, expected_revision)
+        data = read_svg_file(state.svg_path, config)
+        tree = etree.fromstring(data)
+        defs = tree.find(f"{{{ns}}}defs")
+        if defs is None:
+            defs = etree.Element(f"{{{ns}}}defs")
+            tree.insert(0, defs)
+
+        if gradient_type == "linear":
+            g = etree.SubElement(defs, f"{{{ns}}}linearGradient")
+            g.set("id", grad_id)
+            g.set("gradientUnits", "userSpaceOnUse")
+            g.set("x1", str(params.get("x1", 0)))
+            g.set("y1", str(params.get("y1", 0)))
+            g.set("x2", str(params.get("x2", 1)))
+            g.set("y2", str(params.get("y2", 0)))
+        else:  # radial
+            g = etree.SubElement(defs, f"{{{ns}}}radialGradient")
+            g.set("id", grad_id)
+            g.set("gradientUnits", "userSpaceOnUse")
+            g.set("cx", str(params.get("cx", 0)))
+            g.set("cy", str(params.get("cy", 0)))
+            g.set("r", str(params.get("r", 1)))
+            if "fx" in params and "fy" in params:
+                g.set("fx", str(params["fx"]))
+                g.set("fy", str(params["fy"]))
+
+        for stop in stops:
+            s = etree.SubElement(g, f"{{{ns}}}stop")
+            s.set("offset", str(stop.get("offset", 0)))
+            s.set("stop-color", str(stop.get("color", "#000000")))
+            if "opacity" in stop:
+                s.set("stop-opacity", str(stop["opacity"]))
+
+        new_svg = etree.tostring(tree, xml_declaration=True, encoding="UTF-8", pretty_print=True)
+        atomic_write_svg(state.svg_path, new_svg, config)
+        new_rev = session_mgr.increment_revision(state)
+
+    return _success(
+        [{"type": "text", "text": f"{gradient_type} gradient {grad_id}"}],
+        {"gradient_id": grad_id, "gradient_type": gradient_type, "revision": new_rev},
+    )
+
+
+async def tool_create_pattern(
+    session_mgr: SessionManager,
+    config: SecurityConfig,
+    document_path: str,
+    width: float,
+    height: float,
+    content_svg: str,
+    expected_revision: int | None = None,
+) -> dict:
+    """Define a tile <pattern> in <defs>; returns an id for fill='url(#id)'."""
+    ns = "http://www.w3.org/2000/svg"
+    pat_id = f"pat_{uuid.uuid4().hex[:12]}"
+
+    svg_path = validate_path(Path(document_path), config)
+    state = await session_mgr.get_or_open(svg_path)
+    async with state.lock:
+        session_mgr.check_revision(state, expected_revision)
+        data = read_svg_file(state.svg_path, config)
+        tree = etree.fromstring(data)
+        defs = tree.find(f"{{{ns}}}defs")
+        if defs is None:
+            defs = etree.Element(f"{{{ns}}}defs")
+            tree.insert(0, defs)
+
+        p = etree.SubElement(defs, f"{{{ns}}}pattern")
+        p.set("id", pat_id)
+        p.set("width", str(width))
+        p.set("height", str(height))
+        p.set("patternUnits", "userSpaceOnUse")
+
+        try:
+            frag = etree.fromstring(f'<g xmlns="{ns}">{content_svg}</g>')
+        except Exception as exc:
+            raise InkscapeError(f"Invalid pattern content_svg: {exc}")
+
+        for child in list(frag):
+            p.append(child)
+
+        new_svg = etree.tostring(tree, xml_declaration=True, encoding="UTF-8", pretty_print=True)
+        atomic_write_svg(state.svg_path, new_svg, config)
+        new_rev = session_mgr.increment_revision(state)
+
+    return _success(
+        [{"type": "text", "text": f"pattern {pat_id}"}],
+        {"pattern_id": pat_id, "revision": new_rev},
+    )

@@ -42,6 +42,8 @@ from .tools import (
     tool_write_svg,
     tool_transform_element,
     tool_reorder_element,
+    tool_create_gradient,
+    tool_create_pattern,
 )
 from .gui_session import GuiSessionManager
 from .resources import (
@@ -69,6 +71,8 @@ from .schemas import (
     WriteSvgStructured as WriteSvgResult,
     TransformElementStructured as TransformElementResult,
     ReorderElementStructured as ReorderElementResult,
+    CreateGradientStructured as CreateGradientResult,
+    CreatePatternStructured as CreatePatternResult,
 )
 
 
@@ -558,6 +562,56 @@ def create_server() -> FastMCP:
                 session_mgr, config,
                 document_path=document_path, object_id=object_id,
                 position=position, expected_revision=expected_revision,
+            )
+        except InkscapeError:
+            raise
+
+    @mcp.tool(
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
+    async def create_gradient(
+        document_path: str,
+        gradient_type: str,
+        stops: list[dict[str, Any]],
+        params: dict[str, Any] | None = None,
+        expected_revision: int | None = None,
+    ) -> CreateGradientResult:
+        """Define a linear/radial gradient in <defs>; use the returned id as fill='url(#id)'."""
+        try:
+            return await tool_create_gradient(
+                session_mgr, config,
+                document_path=document_path, gradient_type=gradient_type,
+                stops=stops, params=params, expected_revision=expected_revision,
+            )
+        except InkscapeError:
+            raise
+
+    @mcp.tool(
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
+    async def create_pattern(
+        document_path: str,
+        width: float,
+        height: float,
+        content_svg: str,
+        expected_revision: int | None = None,
+    ) -> CreatePatternResult:
+        """Define a tile <pattern> in <defs>; use the returned id as fill='url(#id)'."""
+        try:
+            return await tool_create_pattern(
+                session_mgr, config,
+                document_path=document_path, width=width, height=height,
+                content_svg=content_svg, expected_revision=expected_revision,
             )
         except InkscapeError:
             raise

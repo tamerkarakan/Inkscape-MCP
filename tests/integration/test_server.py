@@ -54,7 +54,9 @@ class TestServerCreation:
         assert "write_svg" in tools
         assert "transform_element" in tools
         assert "reorder_element" in tools
-        assert len(tools) == 18
+        assert "create_gradient" in tools
+        assert "create_pattern" in tools
+        assert len(tools) == 20
 
     def test_resources_registered(self):
         """All required resources are registered (capabilities, doc-info, svg, preview)."""
@@ -89,7 +91,7 @@ class TestServerCreation:
         from inkscape_mcp.server import create_server
         server = create_server()
         tools = server._tool_manager.list_tools()
-        assert len(tools) == 18, f"Expected 18 tools, got {len(tools)}"
+        assert len(tools) == 20, f"Expected 20 tools, got {len(tools)}"
         # render_preview returns an inline FastMCP Image (not structured data),
         # so it intentionally has no output_schema.
         no_schema_ok = {"render_preview"}

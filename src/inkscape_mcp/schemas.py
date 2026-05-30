@@ -313,3 +313,24 @@ class ReorderElementStructured(TypedDict):
     object_id: str
     revision: int
     position: str
+
+
+# ── create_gradient ──
+
+
+class CreateGradientStructured(TypedDict):
+    """Structured result for create_gradient."""
+
+    gradient_id: str
+    gradient_type: str
+    revision: int
+
+
+# ── create_pattern ──
+
+
+class CreatePatternStructured(TypedDict):
+    """Structured result for create_pattern."""
+
+    pattern_id: str
+    revision: int
