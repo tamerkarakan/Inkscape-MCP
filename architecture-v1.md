@@ -37,6 +37,8 @@ Hepsi yerel `inkscape.com` (Inkscape **1.4.2**, f4327f4, 2025-05-13) üzerinde �
 | F15 | `--app-id-tag` bir **GUI instance** içindir, batch'te geçersiz; izolasyon **temp/workspace** ile sağlanır | batch süreç her çağrıda biter |
 | F16 | Extension dosyaları: **177 `.inx` / 337 `.py`** (recursive); 159/165 (top-level). Sayı yanlış metrik — önemli olan **kaçının headless çalıştığı** | dosya sayımı + org.* action analizi |
 | F17 | MCP'de güncel transport yalnızca **stdio + Streamable HTTP**; "HTTP+SSE" eski/deprecated (2025-03-26) | MCP spec |
+| F18 | **Exit code güvenilmez:** runtime/action hatası (bilinmeyen action, yok dosya, shell action hatası) → **exit 0** (hata stderr'de); ama CLI-argüman hatası (bilinmeyen flag) → **exit 1**. Hata tespiti stderr-parse ile yapılır | `--actions=bogus`→0, `--bogus`→1 doğrulandı (DeepSeek kör §4.1 + binary re-verify) |
+| F19 | **Doğrulanmış format/komut detayları:** `--query-all`→`id,x,y,width,height` (satır/nesne), `--query-x/y/width/height`→tek float; `object-set-attribute:attr,value` (virgül sonrası boşluksuz); export sırası `export-filename→export-type→export-do`; `--pipe` stdin'den SVG okur; `--export-filename=-` SVG/plain-SVG'yi stdout'a verir (binary PNG/PDF için geçmez) | DeepSeek kör §7 + binary |
 
 > **Tek cümlelik kapsam sınırı:** Inkscape CLI yeni geometri **yaratamaz**; yalnızca mevcut SVG'yi
 > **seçer, dönüştürür, birleştirir (boolean), sorgular, render/export eder.** Yaratım = DOM/inkex.
@@ -77,6 +79,8 @@ Bunlar **kararlar**dır (gerçek değil). Hepsi Bölüm 1'deki gerçeklerle tuta
 - `shell=True` **asla**; CLI argümanları **liste** olarak.
 - Atomik yazma (temp + rename); başarısızlıkta controlled error + temp cleanup.
 - İşlem-tipine duyarlı timeout (export/trace tek global timeout'a sığmaz).
+- **Hata tespiti stderr-parse ile** (F18): bilinen stderr kalıpları (`could not find action for`, `cannot be opened`, `doesn't exist` …) → tipli controlled error; exit code'a güvenme. *(DeepSeek kör §4.3 kalıp tablosu başlangıç seti.)*
+- **Başlangıç varsayılanları** (pin'lenecek, mutlak değil; işlem-tipine duyarlı kurala tabi): command_timeout 30s · max_svg 50MB · max_export 100MB · max_concurrent_sessions 5 · session_ttl 3600s. *(DeepSeek kör README katkısı.)*
 - Yıkıcı işlem politikası: **annotation + server policy** (`require_confirmation_for_destructive`) + client destekliyorsa **elicitation**, desteklemiyorsa controlled error. (Elicitation tek-zorunlu mekanizma değil.)
 - Hata mesajları dosya sistemi hakkında gereksiz bilgi sızdırmaz.
 
@@ -113,3 +117,5 @@ Bunlar "çözüldü" değil — kod yazmadan **küçük bir prototiple sınanmal
 *Provenans: README.md (DeepSeek vizyonu) → codex-readme.md (Codex MVP notu) → claudan-codexe-eleştiri\[-2/-3\].md
 (Claude) ↔ codexten-claude-eleştiri\[-2\].md (Codex) → bağımsız hakem (gpt-5.5/xhigh). 🔬 gerçekler
 yerel `inkscape.com` 1.4.2 ile doğrulandı. Tarih: 2026-05-29. Durum: **v1 sözleşmesi — prototiple sınanacak.***
+
+*Ek (kör yeniden-test sonrası): F18, F19 ve başlangıç varsayılanları, DeepSeek'in binary-erişimli kör tasarım denemesinden — binary ile teyit edilerek — kontrata alınmıştır. (Kör deneme `tool-rect` keystone'unu yine kaçırdı; ama bu empirik ayrıntıları doğru üretti.)*
