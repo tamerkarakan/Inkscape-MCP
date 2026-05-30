@@ -732,9 +732,10 @@ async def tool_run_actions(
             action_str = ";".join(
                 f"{name}:{arg}" if arg else name for name, arg in all_actions
             )
-            _run_inkscape_sync(
+            await _run_inkscape(
                 ["--actions=" + action_str, str(state.svg_path)],
                 config,
+                timeout=config.export_timeout,
             )
 
             # Verify export succeeded

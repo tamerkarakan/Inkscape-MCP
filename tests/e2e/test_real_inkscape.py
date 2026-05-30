@@ -378,3 +378,42 @@ def test_path_difference_operation(inkscape_workspace):
     # r1 should now be a path element
     r1_elem = tree.xpath("//*[@id='r1']")[0]
     assert "path" in r1_elem.tag.lower()
+
+
+# ── T-5: run_actions THROUGH the production handler (regression guard) ──
+
+
+def test_run_actions_handler_path_union(inkscape_workspace):
+    """Exercise tool_run_actions via the PRODUCTION handler, not inkscape directly.
+
+    Regression guard: a refactor left tool_run_actions calling a deleted
+    `_run_inkscape_sync`, so every path-op raised NameError at runtime. The other
+    e2e tests call the binary directly and never hit the handler, so they stayed
+    green while run_actions was broken. This test runs the real async handler.
+    """
+    import asyncio
+
+    from inkscape_mcp.security import SecurityConfig
+    from inkscape_mcp.session import SessionManager
+    from inkscape_mcp.tools import tool_run_actions
+
+    config = SecurityConfig(workspace_root=inkscape_workspace)
+    mgr = SessionManager(config)
+    # base-input.svg: r1 (rect, bottom), c1 (circle), p1 (path)
+    svg_path = inkscape_workspace / "input.svg"
+
+    result = asyncio.run(
+        tool_run_actions(
+            mgr, config, str(svg_path),
+            operation="path_union",
+            object_ids=["r1", "c1"],
+        )
+    )
+
+    # Must NOT error (pre-fix this raised NameError: _run_inkscape_sync)
+    assert result.get("isError") is not True, result
+    id_map = result["structuredContent"]["id_map"]
+    # F8: path-union keeps the lowest z-order operand (r1), destroys c1
+    assert "c1" in id_map["destroyed"], f"c1 should be destroyed, got {id_map}"
+    assert "r1" in id_map.get("survived", {}), f"r1 should survive, got {id_map}"
+    assert "p1" not in id_map["destroyed"]
